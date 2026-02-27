@@ -19,6 +19,7 @@ import { handleMcpCommand } from "./commands-mcp.js";
 import { handleModelsCommand } from "./commands-models.js";
 import { handlePluginCommand } from "./commands-plugin.js";
 import { handlePluginsCommand } from "./commands-plugins.js";
+import { handlePowernapCommand } from "./commands-powernap.js";
 import {
   handleAbortTrigger,
   handleActivationCommand,
@@ -46,6 +47,7 @@ export function loadCommandHandlers(): CommandHandler[] {
     handleUsageCommand,
     handleSessionCommand,
     handleRestartCommand,
+    handlePowernapCommand,
     handleTtsCommands,
     handleHelpCommand,
     handleCommandsListCommand,
