@@ -178,6 +178,7 @@ export function createSessionsHistoryTool(opts?: {
   sandboxed?: boolean;
   config?: OpenClawConfig;
   callGateway?: GatewayCaller;
+  requesterAgentIdOverride?: string;
 }): AnyAgentTool {
   return {
     label: "Session History",
@@ -192,13 +193,14 @@ export function createSessionsHistoryTool(opts?: {
         required: true,
       });
       const cfg = opts?.config ?? loadConfig();
-      const requesterAgentId = opts?.agentSessionKey
-        ? resolveAgentIdFromSessionKey(opts.agentSessionKey)
-        : undefined;
+      const requesterAgentId =
+        opts?.requesterAgentIdOverride ??
+        (opts?.agentSessionKey ? resolveAgentIdFromSessionKey(opts.agentSessionKey) : undefined);
       const { mainKey, alias, effectiveRequesterKey, restrictToSpawned } =
         resolveSandboxedSessionToolContext({
           cfg,
           agentSessionKey: opts?.agentSessionKey,
+          agentId: opts?.requesterAgentIdOverride,
           sandboxed: opts?.sandboxed,
         });
       const resolvedSession = await resolveSessionReference({
