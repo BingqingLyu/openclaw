@@ -122,6 +122,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     mediaTypes?: string[];
     commandAuthorized: boolean;
     wasMentioned?: boolean;
+    replyToId?: string;
     replyToBody?: string;
     replyToSender?: string;
     replyToIsQuote?: boolean;
@@ -228,6 +229,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       MediaTypes: entry.mediaTypes,
       WasMentioned: entry.isGroup ? entry.wasMentioned === true : undefined,
       CommandAuthorized: entry.commandAuthorized,
+      ReplyToId: entry.replyToId,
       OriginatingChannel: "signal" as const,
       OriginatingTo: signalTo,
     });
@@ -475,6 +477,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       .filter(Boolean)
       .join(":");
     enqueueSystemEvent(text, { sessionKey: route.sessionKey, contextKey });
+    requestHeartbeatNow({ coalesceMs: 500, sessionKey: route.sessionKey });
     return true;
   }
 
@@ -854,6 +857,11 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     const senderName = envelope.sourceName ?? senderDisplay;
     const messageId =
       typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined;
+    const quoteId = dataMessage.quote?.id;
+    const quoteAuthor =
+      dataMessage.quote?.author?.trim() ||
+      dataMessage.quote?.authorNumber?.trim() ||
+      undefined;
     await inboundDebouncer.enqueue({
       senderName,
       senderDisplay,
@@ -872,6 +880,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       mediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
       commandAuthorized,
       wasMentioned: effectiveWasMentioned,
+      replyToId: typeof quoteId === number ? String(quoteId) : undefined,
       replyToBody: visibleQuoteText || undefined,
       replyToSender: visibleQuoteSender,
       replyToIsQuote: visibleQuoteText ? true : undefined,
