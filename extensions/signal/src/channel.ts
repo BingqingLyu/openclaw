@@ -173,6 +173,7 @@ async function sendFormattedSignalText(ctx: {
   cfg: Parameters<typeof resolveSignalAccount>[0]["cfg"];
   to: string;
   text: string;
+  replyToId?: string | null;
   accountId?: string | null;
   deps?: { [channelId: string]: unknown };
   abortSignal?: AbortSignal;
@@ -198,7 +199,9 @@ async function sendFormattedSignalText(ctx: {
     chunks = [{ text: ctx.text, styles: [] }];
   }
   const results = [];
-  for (const chunk of chunks) {
+  for (let i = 0; i < chunks.length; i += 1) {
+    const chunk = chunks[i];
+    if (!chunk) continue;
     ctx.abortSignal?.throwIfAborted();
     const result = await send(ctx.to, chunk.text, {
       cfg: ctx.cfg,
@@ -206,6 +209,7 @@ async function sendFormattedSignalText(ctx: {
       accountId: ctx.accountId ?? undefined,
       textMode: "plain",
       textStyles: chunk.styles,
+      replyToId: i === 0 ? (ctx.replyToId ?? undefined) : undefined,
     });
     results.push(result);
   }
@@ -219,6 +223,7 @@ async function sendFormattedSignalMedia(ctx: {
   mediaUrl: string;
   mediaLocalRoots?: readonly string[];
   mediaReadFile?: (filePath: string) => Promise<Buffer>;
+  replyToId?: string | null;
   accountId?: string | null;
   deps?: { [channelId: string]: unknown };
   abortSignal?: AbortSignal;
@@ -249,6 +254,7 @@ async function sendFormattedSignalMedia(ctx: {
     accountId: ctx.accountId ?? undefined,
     textMode: "plain",
     textStyles: formatted.styles,
+    replyToId: ctx.replyToId ?? undefined,
   });
   return attachChannelToResult("signal", result);
 }
@@ -376,11 +382,12 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
         chunker: chunkText,
         chunkerMode: "text",
         textChunkLimit: SIGNAL_TEXT_CHUNK_LIMIT,
-        sendFormattedText: async ({ cfg, to, text, accountId, deps, abortSignal }) =>
+        sendFormattedText: async ({ cfg, to, text, replyToId, accountId, deps, abortSignal }) =>
           await sendFormattedSignalText({
             cfg,
             to,
             text,
+            replyToId,
             accountId,
             deps,
             abortSignal,
@@ -392,6 +399,7 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
           mediaUrl,
           mediaLocalRoots,
           mediaReadFile,
+          replyToId,
           accountId,
           deps,
           abortSignal,
@@ -403,6 +411,7 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
             mediaUrl,
             mediaLocalRoots,
             mediaReadFile,
+            replyToId,
             accountId,
             deps,
             abortSignal,
