@@ -63,6 +63,12 @@ export type {
   SessionUsageTimeSeries,
 } from "./session-cost-usage.types.js";
 
+export type DayBucketMode =
+  | { type: "human" }
+  | { type: "utc" }
+  | { type: "gateway" }
+  | { type: "specific"; utcOffsetMinutes: number };
+
 const emptyTotals = (): CostUsageTotals => ({
   input: 0,
   output: 0,
@@ -163,8 +169,30 @@ const parseTranscriptEntry = (entry: Record<string, unknown>): ParsedTranscriptE
   };
 };
 
-const formatDayKey = (date: Date, config?: OpenClawConfig): string =>
-  formatHumanDayKey(date, config);
+const formatDayKeyWithOffset = (date: Date, utcOffsetMinutes: number): string =>
+  new Date(date.getTime() + utcOffsetMinutes * 60_000).toISOString().slice(0, 10);
+
+const formatGatewayDayKey = (date: Date): string =>
+  date.toLocaleDateString("en-CA", {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+
+const formatDayKey = (
+  date: Date,
+  config?: OpenClawConfig,
+  mode: DayBucketMode = { type: "human" },
+): string => {
+  if (mode.type === "utc") {
+    return date.toISOString().slice(0, 10);
+  }
+  if (mode.type === "gateway") {
+    return formatGatewayDayKey(date);
+  }
+  if (mode.type === "specific") {
+    return formatDayKeyWithOffset(date, mode.utcOffsetMinutes);
+  }
+  return formatHumanDayKey(date, config);
+};
 
 const computeLatencyStats = (values: number[]): SessionLatencyStats | undefined => {
   if (!values.length) {
@@ -366,6 +394,7 @@ export async function loadCostUsageSummary(params?: {
   days?: number; // Deprecated, for backwards compatibility
   config?: OpenClawConfig;
   agentId?: string;
+  dayBucketMode?: DayBucketMode;
 }): Promise<CostUsageSummary> {
   const now = new Date();
   let sinceTime: number;
@@ -416,7 +445,7 @@ export async function loadCostUsageSummary(params?: {
         if (!ts || ts < sinceTime || ts > untilTime) {
           return;
         }
-        const dayKey = formatDayKey(entry.timestamp ?? now, params?.config);
+        const dayKey = formatDayKey(entry.timestamp ?? now, params?.config, params?.dayBucketMode);
         const bucket = dailyMap.get(dayKey) ?? emptyTotals();
         applyUsageTotals(bucket, entry.usage);
         if (entry.costBreakdown?.total !== undefined) {
@@ -560,6 +589,7 @@ export async function loadSessionCostSummary(params: {
   agentId?: string;
   startMs?: number;
   endMs?: number;
+  dayBucketMode?: DayBucketMode;
 }): Promise<SessionCostSummary | null> {
   const sessionFile = resolveExistingUsageSessionFile(params);
   if (!sessionFile || !fs.existsSync(sessionFile)) {
@@ -633,7 +663,11 @@ export async function loadSessionCostSummary(params: {
             latencyMs <= MAX_LATENCY_MS
           ) {
             latencyValues.push(latencyMs);
-            const dayKey = formatDayKey(entry.timestamp ?? new Date(ts), params?.config);
+            const dayKey = formatDayKey(
+              entry.timestamp ?? new Date(ts),
+              params?.config,
+              params?.dayBucketMode,
+            );
             const dailyLatencies = dailyLatencyMap.get(dayKey) ?? [];
             dailyLatencies.push(latencyMs);
             dailyLatencyMap.set(dayKey, dailyLatencies);
@@ -658,7 +692,7 @@ export async function loadSessionCostSummary(params: {
       }
 
       if (entry.timestamp) {
-        const dayKey = formatDayKey(entry.timestamp, params?.config);
+        const dayKey = formatDayKey(entry.timestamp, params?.config, params?.dayBucketMode);
         activityDatesSet.add(dayKey);
         const daily = dailyMessageMap.get(dayKey) ?? {
           date: dayKey,
@@ -696,7 +730,7 @@ export async function loadSessionCostSummary(params: {
       }
 
       if (entry.timestamp) {
-        const dayKey = formatDayKey(entry.timestamp, params?.config);
+        const dayKey = formatDayKey(entry.timestamp, params?.config, params?.dayBucketMode);
         const entryTokens =
           (entry.usage.input ?? 0) +
           (entry.usage.output ?? 0) +
