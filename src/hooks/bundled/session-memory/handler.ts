@@ -14,6 +14,11 @@ import {
 } from "../../../agents/agent-scope.js";
 import { resolveStateDir } from "../../../config/paths.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import {
+  formatHumanDayKey,
+  formatHumanTime,
+  resolveHumanTimezone,
+} from "../../../infra/format-time/human-day.js";
 import { writeFileWithinRoot } from "../../../infra/fs-safe.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import {
@@ -80,10 +85,6 @@ const saveSessionToMemory: HookHandler = async (event) => {
     const memoryDir = path.join(workspaceDir, "memory");
     await fs.mkdir(memoryDir, { recursive: true });
 
-    // Get today's date for filename
-    const now = new Date(event.timestamp);
-    const dateStr = now.toISOString().split("T")[0]; // YYYY-MM-DD
-
     // Generate descriptive slug from session using LLM
     // Prefer previousSessionEntry (old session before /new) over current (which may be empty)
     const sessionEntry = (context.previousSessionEntry || context.sessionEntry || {}) as Record<
@@ -123,6 +124,14 @@ const saveSessionToMemory: HookHandler = async (event) => {
     });
 
     const sessionFile = currentSessionFile || undefined;
+    const eventTimestampMs = event.timestamp.getTime();
+    const sessionTimestampMs =
+      typeof sessionEntry.updatedAt === "number" && Number.isFinite(sessionEntry.updatedAt)
+        ? Math.floor(sessionEntry.updatedAt)
+        : eventTimestampMs;
+    const dateStr = formatHumanDayKey(sessionTimestampMs, cfg);
+    const timeStr = formatHumanTime(sessionTimestampMs, cfg, { includeSeconds: true });
+    const timeZone = resolveHumanTimezone(cfg);
 
     // Read message count from hook config (default: 15)
     const hookConfig = resolveHookConfig(cfg, "session-memory");
@@ -160,8 +169,7 @@ const saveSessionToMemory: HookHandler = async (event) => {
 
     // If no slug, use timestamp
     if (!slug) {
-      const timeSlug = now.toISOString().split("T")[1].split(".")[0].replace(/:/g, "");
-      slug = timeSlug.slice(0, 4); // HHMM
+      slug = formatHumanTime(eventTimestampMs, cfg, { compact: true });
       log.debug("Using fallback timestamp slug", { slug });
     }
 
@@ -173,16 +181,13 @@ const saveSessionToMemory: HookHandler = async (event) => {
       path: memoryFilePath.replace(os.homedir(), "~"),
     });
 
-    // Format time as HH:MM:SS UTC
-    const timeStr = now.toISOString().split("T")[1].split(".")[0];
-
     // Extract context details
     const sessionId = (sessionEntry.sessionId as string) || "unknown";
     const source = (context.commandSource as string) || "unknown";
 
     // Build Markdown entry
     const entryParts = [
-      `# Session: ${dateStr} ${timeStr} UTC`,
+      `# Session: ${dateStr} ${timeStr} (${timeZone})`,
       "",
       `- **Session Key**: ${displaySessionKey}`,
       `- **Session ID**: ${sessionId}`,

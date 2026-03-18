@@ -66,11 +66,12 @@ function createMockSessionContent(
 
 async function runNewWithPreviousSessionEntry(params: {
   tempDir: string;
-  previousSessionEntry: { sessionId: string; sessionFile?: string };
+  previousSessionEntry: { sessionId: string; sessionFile?: string; updatedAt?: number };
   cfg?: OpenClawConfig;
   action?: "new" | "reset";
   sessionKey?: string;
   workspaceDirOverride?: string;
+  eventTimestamp?: Date;
 }): Promise<{ files: string[]; memoryContent: string }> {
   const event = createHookEvent(
     "command",
@@ -86,6 +87,9 @@ async function runNewWithPreviousSessionEntry(params: {
       ...(params.workspaceDirOverride ? { workspaceDir: params.workspaceDirOverride } : {}),
     },
   );
+  if (params.eventTimestamp) {
+    event.timestamp = params.eventTimestamp;
+  }
 
   await handler(event);
 
@@ -585,5 +589,56 @@ describe("session-memory hook", () => {
 
     expect(memoryContent).toContain("user: Only message 1");
     expect(memoryContent).toContain("assistant: Only message 2");
+  });
+
+  it("uses the userTimezone and prior session activity for human-day filenames", async () => {
+    const tempDir = await createCaseWorkspace("workspace");
+    const sessionsDir = path.join(tempDir, "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    const sessionFile = await writeWorkspaceFile({
+      dir: sessionsDir,
+      name: "test-session.jsonl",
+      content: createMockSessionContent([
+        { role: "user", content: "Late-night wrap-up" },
+        { role: "assistant", content: "Captured before midnight UTC confusion" },
+      ]),
+    });
+
+    const cfg = {
+      agents: {
+        defaults: {
+          workspace: tempDir,
+          userTimezone: "Asia/Shanghai",
+        },
+      },
+      hooks: {
+        internal: {
+          entries: {
+            "session-memory": {
+              enabled: true,
+              llmSlug: false,
+            },
+          },
+        },
+      },
+    } as unknown as OpenClawConfig;
+
+    const sessionUpdatedAt = Date.UTC(2026, 2, 18, 16, 20, 0); // 2026-03-19 00:20 +08:00
+    const eventTimestamp = new Date(Date.UTC(2026, 2, 18, 16, 30, 0)); // 00:30 +08:00
+
+    const { files, memoryContent } = await runNewWithPreviousSessionEntry({
+      tempDir,
+      cfg,
+      eventTimestamp,
+      previousSessionEntry: {
+        sessionId: "test-123",
+        sessionFile,
+        updatedAt: sessionUpdatedAt,
+      },
+    });
+
+    expect(files).toHaveLength(1);
+    expect(files[0]).toBe("2026-03-19-0030.md");
+    expect(memoryContent).toContain("# Session: 2026-03-19 00:20:00 (Asia/Shanghai)");
   });
 });

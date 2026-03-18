@@ -433,7 +433,12 @@ export async function initSessionState(params: {
   const entryFreshness = entry
     ? isSystemEvent || skipImplicitExpiry
       ? ({ fresh: true } satisfies SessionFreshness)
-      : evaluateSessionFreshness({ updatedAt: entry.updatedAt, now, policy: resetPolicy })
+      : evaluateSessionFreshness({
+          updatedAt: entry.updatedAt,
+          now,
+          policy: resetPolicy,
+          cfg,
+        })
     : undefined;
   const softResetAllowed =
     softReset.matched &&
