@@ -42,6 +42,7 @@ public final class OpenClawChatViewModel {
 
     @ObservationIgnored
     private nonisolated(unsafe) var eventTask: Task<Void, Never>?
+    private var hasLoadedInitialState = false
     private var pendingRuns = Set<String>() {
         didSet { self.pendingRunCount = self.pendingRuns.count }
     }
@@ -106,6 +107,8 @@ public final class OpenClawChatViewModel {
     }
 
     public func load() {
+        guard !self.hasLoadedInitialState else { return }
+        self.hasLoadedInitialState = true
         Task { await self.bootstrap() }
     }
 
@@ -1035,11 +1038,11 @@ public final class OpenClawChatViewModel {
     }
 
     private func shouldAcceptAgentEvent(_ evt: OpenClawAgentEventPayload) -> Bool {
-        if let sessionKey = evt.sessionKey {
-            return Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
-        }
         if self.pendingRuns.contains(evt.runId) {
             return true
+        }
+        if let sessionKey = evt.sessionKey {
+            return Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
         }
         if let sessionId {
             return evt.runId == sessionId

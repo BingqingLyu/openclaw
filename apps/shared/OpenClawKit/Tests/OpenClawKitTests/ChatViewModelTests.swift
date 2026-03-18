@@ -386,6 +386,10 @@ private final class TestChatTransport: @unchecked Sendable, OpenClawChatTranspor
         return ids.last
     }
 
+    func historyRequestCount() async -> Int {
+        await self.state.historyCallCount
+    }
+
     func abortedRunIds() async -> [String] {
         await self.state.abortedRunIds
     }
@@ -703,6 +707,46 @@ extension TestChatTransportState {
 
         try? await Task.sleep(nanoseconds: 150_000_000)
         #expect(await MainActor.run { vm.streamingAssistantText } == nil)
+    }
+
+    @Test func acceptsPendingRunAgentEventsEvenWhenSessionKeyMismatches() async throws {
+        let history = historyPayload(sessionId: "sess-main")
+        let (transport, vm) = await makeViewModel(historyResponses: [history])
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        await sendUserMessage(vm)
+        try await waitUntil("pending run starts") { await transport.lastSentRunId() != nil }
+        let runId = try #require(await transport.lastSentRunId())
+
+        emitAssistantText(
+            transport: transport,
+            runId: runId,
+            text: "own run still streams",
+            sessionKey: "agent:main:other")
+
+        try await waitUntil("assistant stream visible for own run despite key mismatch") {
+            await MainActor.run { vm.streamingAssistantText == "own run still streams" }
+        }
+    }
+
+    @Test func loadIsIdempotentDuringActiveStream() async throws {
+        let history = historyPayload(messages: [chatTextMessage(role: "user", text: "hello", timestamp: 1)])
+        let (transport, vm) = await makeViewModel(historyResponses: [history])
+        try await loadAndWaitBootstrap(vm: vm)
+        await sendUserMessage(vm)
+        try await waitUntil("pending run starts") { await transport.lastSentRunId() != nil }
+        let runId = try #require(await transport.lastSentRunId())
+
+        emitAssistantText(transport: transport, runId: runId, text: "stream survives load")
+        try await waitUntil("assistant stream visible") {
+            await MainActor.run { vm.streamingAssistantText == "stream survives load" }
+        }
+
+        await MainActor.run { vm.load() }
+        try? await Task.sleep(nanoseconds: 150_000_000)
+
+        #expect(await transport.historyRequestCount() == 1)
+        #expect(await MainActor.run { vm.streamingAssistantText } == "stream survives load")
+        #expect(await MainActor.run { vm.pendingRunCount } == 1)
     }
 
     @Test func acceptsCanonicalSessionKeyEventsForExternalRuns() async throws {
