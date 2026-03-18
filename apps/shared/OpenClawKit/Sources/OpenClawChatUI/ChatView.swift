@@ -17,6 +17,7 @@ public struct OpenClawChatView: View {
     @State private var hasPerformedInitialScroll = false
     @State private var isPinnedToBottom = true
     @State private var lastUserMessageID: UUID?
+    @State private var pendingStreamingScrollTask: Task<Void, Never>?
     private let showsSessionSwitcher: Bool
     private let style: Style
     private let markdownVariant: ChatMarkdownVariant
@@ -83,6 +84,10 @@ public struct OpenClawChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { self.viewModel.load() }
+        .onDisappear {
+            self.pendingStreamingScrollTask?.cancel()
+            self.pendingStreamingScrollTask = nil
+        }
         .sheet(isPresented: self.$showSessions) {
             if self.showsSessionSwitcher {
                 ChatSessionsSheet(viewModel: self.viewModel)
@@ -180,6 +185,16 @@ public struct OpenClawChatView: View {
         }
         .onChange(of: self.viewModel.streamingAssistantText) { _, _ in
             guard self.hasPerformedInitialScroll, self.isPinnedToBottom else { return }
+            self.scheduleStreamingScrollToBottom()
+        }
+    }
+
+    private func scheduleStreamingScrollToBottom() {
+        guard self.pendingStreamingScrollTask == nil else { return }
+        self.pendingStreamingScrollTask = Task { @MainActor in
+            defer { self.pendingStreamingScrollTask = nil }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !Task.isCancelled, self.hasPerformedInitialScroll, self.isPinnedToBottom else { return }
             withAnimation(.snappy(duration: 0.22)) {
                 self.scrollPosition = self.scrollerBottomID
             }
