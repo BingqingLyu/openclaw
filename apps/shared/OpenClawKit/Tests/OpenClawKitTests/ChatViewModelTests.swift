@@ -777,9 +777,14 @@ extension TestChatTransportState {
         }
     }
 
-    @Test func appendsFinalAssistantMessageImmediatelyWithoutHistoryRefresh() async throws {
-        let history = historyPayload(messages: [])
-        let (transport, vm) = await makeViewModel(historyResponses: [history])
+    @Test func appendsFinalAssistantMessageImmediatelyAndRefreshesHistory() async throws {
+        let now = Date().timeIntervalSince1970 * 1000
+        let history1 = historyPayload(messages: [])
+        let history2 = historyPayload(
+            messages: [
+                chatTextMessage(role: "assistant", text: "final from event", timestamp: now),
+            ])
+        let (transport, vm) = await makeViewModel(historyResponses: [history1, history2])
         try await loadAndWaitBootstrap(vm: vm)
         await sendUserMessage(vm)
         try await waitUntil("pending run starts") { await MainActor.run { vm.pendingRunCount == 1 } }
@@ -793,7 +798,7 @@ extension TestChatTransportState {
         let finalMessage = AnyCodable([
             "role": "assistant",
             "content": [["type": "text", "text": "final from event"]],
-            "timestamp": Date().timeIntervalSince1970 * 1000,
+            "timestamp": now,
         ])
         transport.emit(
             .chat(
@@ -810,6 +815,9 @@ extension TestChatTransportState {
                     message.role == "assistant" && message.content.contains(where: { $0.text == "final from event" })
                 })
             }
+        }
+        try await waitUntil("history refreshed after local final message") {
+            await transport.historyRequestCount() == 2
         }
         #expect(await MainActor.run { vm.streamingAssistantText } == nil)
     }
@@ -853,6 +861,47 @@ extension TestChatTransportState {
             await transport.historyRequestCount() == 2
         }
         try await waitUntil("user prompt synced from history") {
+            await MainActor.run {
+                vm.messages.contains(where: { message in
+                    message.role == "user" && message.content.contains(where: { $0.text == "prompt from another client" })
+                })
+            }
+        }
+    }
+
+    @Test func externalFinalMessageRefreshesHistoryEvenDuringLocalPendingRun() async throws {
+        let now = Date().timeIntervalSince1970 * 1000
+        let history1 = historyPayload(messages: [])
+        let history2 = historyPayload(
+            messages: [
+                chatTextMessage(role: "user", text: "prompt from another client", timestamp: now),
+                chatTextMessage(role: "assistant", text: "external final while local run pending", timestamp: now + 1),
+            ])
+        let (transport, vm) = await makeViewModel(historyResponses: [history1, history2])
+
+        try await loadAndWaitBootstrap(vm: vm)
+        await sendUserMessage(vm, text: "local pending run")
+        try await waitUntil("local pending run starts") { await MainActor.run { vm.pendingRunCount == 1 } }
+        #expect(await transport.historyRequestCount() == 1)
+
+        let finalMessage = AnyCodable([
+            "role": "assistant",
+            "content": [["type": "text", "text": "external final while local run pending"]],
+            "timestamp": now + 1,
+        ])
+        transport.emit(
+            .chat(
+                OpenClawChatEventPayload(
+                    runId: "external-run",
+                    sessionKey: "agent:main:main",
+                    state: "final",
+                    message: finalMessage,
+                    errorMessage: nil)))
+
+        try await waitUntil("history refreshed after external final with local pending run") {
+            await transport.historyRequestCount() == 2
+        }
+        try await waitUntil("external prompt synced from history during local pending run") {
             await MainActor.run {
                 vm.messages.contains(where: { message in
                     message.role == "user" && message.content.contains(where: { $0.text == "prompt from another client" })

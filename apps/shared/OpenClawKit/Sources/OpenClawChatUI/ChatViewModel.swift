@@ -986,9 +986,7 @@ public final class OpenClawChatViewModel {
                 if let message = self.decodedAssistantMessage(from: chat.message) {
                     self.messages.append(message)
                 }
-                if shouldResetExternalLiveState {
-                    Task { await self.refreshHistoryAfterRun() }
-                }
+                Task { await self.refreshHistoryAfterRun() }
             case "error":
                 if shouldResetExternalLiveState {
                     self.streamingAssistantText = nil
@@ -1012,10 +1010,10 @@ public final class OpenClawChatViewModel {
                 self.clearPendingRuns(reason: nil)
             }
 
-            let appendedFinalMessage = self.appendFinalAssistantMessage(from: chat)
+            _ = self.appendFinalAssistantMessage(from: chat)
             self.pendingToolCallsById = [:]
             self.streamingAssistantText = nil
-            if !appendedFinalMessage {
+            if chat.state != "error" {
                 Task { await self.refreshHistoryAfterRun() }
             }
         default:
