@@ -814,6 +814,53 @@ extension TestChatTransportState {
         #expect(await MainActor.run { vm.streamingAssistantText } == nil)
     }
 
+    @Test func externalFinalMessageStillRefreshesHistory() async throws {
+        let now = Date().timeIntervalSince1970 * 1000
+        let history1 = historyPayload(messages: [])
+        let history2 = historyPayload(
+            messages: [
+                chatTextMessage(role: "user", text: "prompt from another client", timestamp: now),
+                chatTextMessage(role: "assistant", text: "final from external event", timestamp: now + 1),
+            ])
+        let (transport, vm) = await makeViewModel(historyResponses: [history1, history2])
+
+        await MainActor.run { vm.load() }
+        try await waitUntil("bootstrap history loaded") { await MainActor.run { vm.messages.isEmpty } }
+        #expect(await transport.historyRequestCount() == 1)
+
+        let finalMessage = AnyCodable([
+            "role": "assistant",
+            "content": [["type": "text", "text": "final from external event"]],
+            "timestamp": now + 1,
+        ])
+        transport.emit(
+            .chat(
+                OpenClawChatEventPayload(
+                    runId: "external-run",
+                    sessionKey: "agent:main:main",
+                    state: "final",
+                    message: finalMessage,
+                    errorMessage: nil)))
+
+        try await waitUntil("final message appended immediately") {
+            await MainActor.run {
+                vm.messages.contains(where: { message in
+                    message.role == "assistant" && message.content.contains(where: { $0.text == "final from external event" })
+                })
+            }
+        }
+        try await waitUntil("history refreshed after external final message") {
+            await transport.historyRequestCount() == 2
+        }
+        try await waitUntil("user prompt synced from history") {
+            await MainActor.run {
+                vm.messages.contains(where: { message in
+                    message.role == "user" && message.content.contains(where: { $0.text == "prompt from another client" })
+                })
+            }
+        }
+    }
+
     @Test func preservesMessageIDsAcrossHistoryRefreshes() async throws {
         let now = Date().timeIntervalSince1970 * 1000
         let history1 = historyPayload(messages: [chatTextMessage(role: "user", text: "hello", timestamp: now)])

@@ -985,7 +985,8 @@ public final class OpenClawChatViewModel {
                 }
                 if let message = self.decodedAssistantMessage(from: chat.message) {
                     self.messages.append(message)
-                } else if shouldResetExternalLiveState {
+                }
+                if shouldResetExternalLiveState {
                     Task { await self.refreshHistoryAfterRun() }
                 }
             case "error":
