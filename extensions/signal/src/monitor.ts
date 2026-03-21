@@ -329,7 +329,7 @@ async function deliverReplies(params: {
   for (const payload of replies) {
     const reply = resolveSendableOutboundReplyParts(payload);
     const replyTo = payload.replyToId ?? undefined;
-    let firstChunk = true;
+    let sentCount = 0;
     const delivered = await deliverTextOrMediaReply({
       payload,
       text: reply.text,
@@ -341,9 +341,9 @@ async function deliverReplies(params: {
           account,
           maxBytes,
           accountId,
-          replyToId: firstChunk ? replyTo : undefined,
+          replyToId: sentCount === 0 ? replyTo : undefined,
         });
-        firstChunk = false;
+        sentCount += 1;
       },
       sendMedia: async ({ mediaUrl, caption }) => {
         await sendMessageSignal(target, caption ?? "", {
@@ -353,9 +353,9 @@ async function deliverReplies(params: {
           mediaUrl,
           maxBytes,
           accountId,
-          replyToId: firstChunk ? replyTo : undefined,
+          replyToId: sentCount === 0 ? replyTo : undefined,
         });
-        firstChunk = false;
+        sentCount += 1;
       },
     });
     if (delivered !== "empty") {
