@@ -991,8 +991,8 @@ public final class OpenClawChatViewModel {
                 if shouldResetExternalLiveState {
                     self.streamingAssistantText = nil
                     self.pendingToolCallsById = [:]
-                    Task { await self.refreshHistoryAfterRun() }
                 }
+                Task { await self.refreshHistoryAfterRun() }
             default:
                 break
             }
@@ -1013,9 +1013,7 @@ public final class OpenClawChatViewModel {
             _ = self.appendFinalAssistantMessage(from: chat)
             self.pendingToolCallsById = [:]
             self.streamingAssistantText = nil
-            if chat.state != "error" {
-                Task { await self.refreshHistoryAfterRun() }
-            }
+            Task { await self.refreshHistoryAfterRun() }
         default:
             break
         }
@@ -1039,6 +1037,9 @@ public final class OpenClawChatViewModel {
     private func shouldAcceptAgentEvent(_ evt: OpenClawAgentEventPayload) -> Bool {
         if self.pendingRuns.contains(evt.runId) {
             return true
+        }
+        if !self.pendingRuns.isEmpty {
+            return false
         }
         if let sessionKey = evt.sessionKey {
             return Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
@@ -1090,6 +1091,7 @@ public final class OpenClawChatViewModel {
             self.messages.append(message)
             return true
         }
+        guard chat.state != "error" else { return false }
         if let streamed = self.streamedAssistantMessage() {
             self.messages.append(streamed)
             return true
