@@ -118,7 +118,8 @@ export function createSessionsSendTool(opts?: {
 
       let sessionKey = sessionKeyParam;
       if (!sessionKey && labelParam) {
-        const labelRequesterAgentId = resolveAgentIdFromSessionKey(effectiveRequesterKey);
+        const labelRequesterAgentId =
+          requesterAgentId ?? resolveAgentIdFromSessionKey(effectiveRequesterKey);
         const requestedAgentId = labelAgentIdParam
           ? normalizeAgentId(labelAgentIdParam)
           : undefined;
