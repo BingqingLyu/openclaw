@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import { handleAgentEnd } from "./pi-embedded-subscribe.handlers.lifecycle.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
@@ -490,6 +490,10 @@ describe("handleAgentEnd", () => {
   });
 
   describe("agent_error hook", () => {
+    afterEach(() => {
+      _globalHookRunner = null;
+    });
+
     it("broadcasts hook replacement message instead of raw error", async () => {
       const onAgentEvent = vi.fn();
       _globalHookRunner = {
@@ -515,7 +519,6 @@ describe("handleAgentEnd", () => {
           error: "⚠️ Me he quedado sin tokens",
         },
       });
-      _globalHookRunner = null;
     });
 
     it("broadcasts original error when hook returns no message", async () => {
@@ -544,7 +547,6 @@ describe("handleAgentEnd", () => {
           }),
         }),
       );
-      _globalHookRunner = null;
     });
 
     it("broadcasts original error when hook throws", async () => {
@@ -575,7 +577,6 @@ describe("handleAgentEnd", () => {
           }),
         }),
       );
-      _globalHookRunner = null;
     });
   });
 });
