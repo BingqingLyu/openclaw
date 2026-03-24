@@ -728,6 +728,31 @@ extension TestChatTransportState {
         }
     }
 
+    @Test func acceptsSessionKeyMatchedAgentEventsWhileLocalRunIsPending() async throws {
+        let history = historyPayload(sessionId: "sess-main")
+        let (transport, vm) = await makeViewModel(historyResponses: [history])
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        await sendUserMessage(vm)
+        try await waitUntil("pending run starts") { await MainActor.run { vm.pendingRunCount == 1 } }
+
+        emitAssistantText(
+            transport: transport,
+            runId: "server-run-different",
+            text: "session-key stream still visible",
+            sessionKey: "agent:main:main")
+        emitToolStart(
+            transport: transport,
+            runId: "server-run-different",
+            sessionKey: "agent:main:main")
+
+        try await waitUntil("assistant stream visible via session key during local pending run") {
+            await MainActor.run { vm.streamingAssistantText == "session-key stream still visible" }
+        }
+        try await waitUntil("tool call visible via session key during local pending run") {
+            await MainActor.run { vm.pendingToolCalls.count == 1 }
+        }
+    }
+
     @Test func loadIsIdempotentDuringActiveStream() async throws {
         let history = historyPayload(messages: [chatTextMessage(role: "user", text: "hello", timestamp: 1)])
         let (transport, vm) = await makeViewModel(historyResponses: [history])

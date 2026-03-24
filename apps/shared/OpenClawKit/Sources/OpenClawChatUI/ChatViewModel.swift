@@ -982,9 +982,9 @@ public final class OpenClawChatViewModel {
                 if shouldResetExternalLiveState {
                     self.streamingAssistantText = nil
                     self.pendingToolCallsById = [:]
-                }
-                if let message = self.decodedAssistantMessage(from: chat.message) {
-                    self.messages.append(message)
+                    if let message = self.decodedAssistantMessage(from: chat.message) {
+                        self.messages.append(message)
+                    }
                 }
                 Task { await self.refreshHistoryAfterRun() }
             case "error":
@@ -1038,11 +1038,10 @@ public final class OpenClawChatViewModel {
         if self.pendingRuns.contains(evt.runId) {
             return true
         }
-        if !self.pendingRuns.isEmpty {
-            return false
-        }
-        if let sessionKey = evt.sessionKey {
-            return Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
+        if let sessionKey = evt.sessionKey,
+           Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
+        {
+            return true
         }
         if let sessionId {
             return evt.runId == sessionId
