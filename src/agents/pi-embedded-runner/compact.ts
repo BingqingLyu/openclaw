@@ -406,6 +406,7 @@ export async function compactEmbeddedPiSessionDirect(
     sessionFile: params.sessionFile,
     sessionId: params.sessionId,
     cwd: effectiveWorkspace,
+    sessionKey: params.sessionKey,
   });
   const { sessionAgentId: effectiveSkillAgentId } = resolveSessionAgentIds({
     sessionKey: params.sessionKey,

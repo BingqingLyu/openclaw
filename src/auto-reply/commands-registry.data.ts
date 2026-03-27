@@ -31,6 +31,21 @@ let cachedNativeRegistry: ReturnType<typeof getActivePluginRegistry> | null = nu
 function buildChatCommands(): ChatCommandDefinition[] {
   const commands: ChatCommandDefinition[] = [
     ...buildBuiltinChatCommands(),
+    defineChatCommand({
+      key: "restore",
+      nativeName: "restore",
+      description: "Restore an archived session.",
+      textAlias: "/restore",
+      acceptsArgs: true,
+      category: "session",
+      args: [
+        {
+          name: "number",
+          description: "Archive number from /restore list",
+          type: "number",
+        },
+      ],
+    }),
     ...listChannelPlugins()
       .filter(supportsNativeCommands)
       .map((plugin) => defineDockCommand(plugin)),
