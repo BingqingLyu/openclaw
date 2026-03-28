@@ -30,27 +30,28 @@ export function shouldAnnounceHookResultToMain(params: {
 }): boolean {
   const { value, result } = params;
 
-  // Always surface real run-level errors, including non-throw status:"error".
   if (result.status !== "ok") {
     return true;
   }
 
-  // Explicit result-level policy wins when present.
   if (typeof result.announceToMain === "boolean") {
     return result.announceToMain;
   }
 
-  // Compatibility bridge for existing hook configurations:
-  // - deliver:false hooks should stay silent on success
-  if (value.deliver === false) {
+  if (!value.deliver) {
     return false;
   }
-  // - already-delivered hooks should not duplicate into main
-  if (result.delivered === true) {
+
+  if (result.delivered) {
     return false;
   }
-  // - delivery-attempted hooks should not fallback into main
-  if (result.deliveryAttempted === true) {
+
+  // `deliveryAttempted` is intentionally broader than "an outbound send
+  // definitely happened": dispatchCronDelivery also sets it on handled/no-
+  // fallback paths (for example stale delivery skips and descendant/interim
+  // suppression) specifically to prevent redundant enqueueSystemEvent
+  // fallback.
+  if (result.deliveryAttempted) {
     return false;
   }
 
