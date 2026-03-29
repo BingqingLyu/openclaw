@@ -505,7 +505,7 @@ describe("session-memory hook", () => {
     }
 
     expectMemoryConversation({
-      memoryContent: memoryContent!,
+      memoryContent,
       user: "Newest rotated transcript",
       assistant: "Newest summary",
       absent: "Older rotated transcript",
@@ -539,7 +539,7 @@ describe("session-memory hook", () => {
     }
 
     expectMemoryConversation({
-      memoryContent: memoryContent!,
+      memoryContent,
       user: "Active transcript message",
       assistant: "Active transcript summary",
       absent: "Reset fallback message",
