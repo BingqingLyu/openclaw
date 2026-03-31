@@ -987,7 +987,7 @@ async function dispatchDiscordCommandInteraction(params: {
       channelSlug,
     });
     if (!groupDmAllowed) {
-      await respond("This channel is not allowed.");
+      await respond("This group DM is not allowed.");
       return;
     }
   }
