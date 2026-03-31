@@ -38,7 +38,6 @@ export type {
   OpenClawPluginServiceContext,
   PluginCommandContext,
   PluginLogger,
-  PluginResetSessionResult,
   ProviderAuthContext,
   ProviderAuthDoctorHintContext,
   ProviderAuthMethod,
@@ -84,7 +83,12 @@ export type {
   ProviderWrapStreamFnContext,
   SpeechProviderPlugin,
 } from "./plugin-entry.js";
-export type { OpenClawPluginToolContext, OpenClawPluginToolFactory } from "../plugins/types.js";
+<<<<<<< HEAD
+export type {
+  OpenClawPluginToolContext,
+  OpenClawPluginToolFactory,
+  PluginResetSessionResult,
+} from "../plugins/types.js";
 export type {
   MemoryPluginCapability,
   MemoryPluginPublicArtifact,
