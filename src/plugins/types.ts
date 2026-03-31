@@ -2110,6 +2110,11 @@ export type OpenClawPluginModule =
 
 export type PluginRegistrationMode = "full" | "setup-only" | "setup-runtime" | "cli-metadata";
 
+/** Structured result from `api.resetSession()`. */
+export type PluginResetSessionResult =
+  | { ok: true; key: string; sessionId: string }
+  | { ok: false; key: string; code: string; message: string };
+
 export type PluginConfigMigration = (config: OpenClawConfig) =>
   | {
       config: OpenClawConfig;
@@ -2267,6 +2272,12 @@ export type OpenClawPluginApi = {
   registerMemoryEmbeddingProvider: (
     adapter: import("./memory-embedding-providers.js").MemoryEmbeddingProviderAdapter,
   ) => void;
+  /**
+   * Reset a session. Only available in full registration mode when the
+   * gateway supports session reset. Returns a structured result instead of
+   * rejecting for operational failures.
+   */
+  resetSession?: (key: string, reason?: string) => Promise<PluginResetSessionResult>;
   resolvePath: (input: string) => string;
   /** Register a lifecycle hook handler */
   on: <K extends PluginHookName>(

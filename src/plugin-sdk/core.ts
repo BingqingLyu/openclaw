@@ -38,6 +38,7 @@ export type {
   OpenClawPluginServiceContext,
   PluginCommandContext,
   PluginLogger,
+  PluginResetSessionResult,
   ProviderAuthContext,
   ProviderAuthDoctorHintContext,
   ProviderAuthMethod,
