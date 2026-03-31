@@ -1013,6 +1013,13 @@ export async function preflightDiscordMessage(
   logDebug(
     `[discord-preflight] shouldRequireMention=${shouldRequireMention} baseRequireMention=${shouldRequireMentionByConfig} boundThreadSession=${isBoundThreadSession} mentionDecision.shouldSkip=${mentionDecision.shouldSkip} wasMentioned=${wasMentioned}`,
   );
+
+  if (isGuildMessage && hasAccessRestrictions && !memberAllowed) {
+    logDebug(`[discord-preflight] drop: member not allowed`);
+    logVerbose(`Blocked discord guild sender ${sender.id} (not in users/roles allowlist)`);
+    return null;
+  }
+
   if (isGuildMessage && shouldRequireMention) {
     if (botId && mentionDecision.shouldSkip) {
       logDebug(`[discord-preflight] drop: no-mention`);
@@ -1062,12 +1069,6 @@ export async function preflightDiscordMessage(
       limit: params.historyLimit,
       entry: historyEntry ?? null,
     });
-    return null;
-  }
-
-  if (isGuildMessage && hasAccessRestrictions && !memberAllowed) {
-    logDebug(`[discord-preflight] drop: member not allowed`);
-    logVerbose(`Blocked discord guild sender ${sender.id} (not in users/roles allowlist)`);
     return null;
   }
 
