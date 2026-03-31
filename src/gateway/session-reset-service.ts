@@ -456,6 +456,8 @@ function emitGatewayBeforeResetPluginHook(params: {
     });
 }
 
+const resetSessionsInFlight = new Set<string>();
+
 export async function performGatewaySessionReset(params: {
   key: string;
   reason: "new" | "reset";
@@ -469,7 +471,37 @@ export async function performGatewaySessionReset(params: {
     const target = resolveGatewaySessionStoreTarget({ cfg, key: params.key });
     return { cfg, target, storePath: target.storePath };
   })();
-  const { entry, legacyKey, canonicalKey } = loadSessionEntry(params.key);
+
+  const lockKey = target.canonicalKey;
+  if (resetSessionsInFlight.has(lockKey)) {
+    return {
+      ok: false,
+      error: errorShape(
+        ErrorCodes.UNAVAILABLE,
+        `session reset already in progress for key: ${lockKey}`,
+      ),
+    };
+  }
+  resetSessionsInFlight.add(lockKey);
+  try {
+    return await performGatewaySessionResetInner({ cfg, target, storePath, params });
+  } finally {
+    resetSessionsInFlight.delete(lockKey);
+  }
+}
+
+async function performGatewaySessionResetInner(ctx: {
+  cfg: ReturnType<typeof loadConfig>;
+  target: ReturnType<typeof resolveGatewaySessionStoreTarget>;
+  storePath: string;
+  params: { key: string; reason: "new" | "reset"; commandSource: string };
+}): Promise<
+  | { ok: true; key: string; entry: SessionEntry }
+  | { ok: false; error: ReturnType<typeof errorShape> }
+> {
+  const { cfg, target, storePath, params } = ctx;
+  // Use the same cfg snapshot for entry resolution to avoid config drift.
+  const { entry, legacyKey, canonicalKey } = loadSessionEntry(params.key, cfg);
   const hadExistingEntry = Boolean(entry);
   const hookEvent = createInternalHookEvent(
     "command",

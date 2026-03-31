@@ -384,8 +384,8 @@ function resolveTranscriptUsageFallback(params: {
   };
 }
 
-export function loadSessionEntry(sessionKey: string) {
-  const cfg = loadConfig();
+export function loadSessionEntry(sessionKey: string, existingCfg?: OpenClawConfig) {
+  const cfg = existingCfg ?? loadConfig();
   const canonicalKey = resolveSessionStoreKey({ cfg, sessionKey });
   const agentId = resolveSessionStoreAgentId(cfg, canonicalKey);
   const { storePath, store } = resolveGatewaySessionStoreLookup({
