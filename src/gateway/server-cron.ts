@@ -49,6 +49,10 @@ export type GatewayCronState = {
 
 const CRON_WEBHOOK_TIMEOUT_MS = 10_000;
 
+function resolveCronWebhookPolicy(cfg: ReturnType<typeof loadConfig>): SsrFPolicy | undefined {
+  return cfg.cron?.webhookAllowPrivateNetwork === true ? { allowPrivateNetwork: true } : undefined;
+}
+
 function redactWebhookUrl(url: string): string {
   try {
     const parsed = new URL(url);
@@ -354,10 +358,7 @@ export function buildGatewayCronService(params: {
     sendCronFailureAlert: async ({ job, text, channel, to, mode, accountId }) => {
       const { agentId, cfg: runtimeConfig } = resolveCronAgent(job.agentId);
       const webhookToken = normalizeOptionalString(params.cfg.cron?.webhookToken);
-      const webhookPolicy: SsrFPolicy | undefined =
-        params.cfg.cron?.webhookAllowPrivateNetwork === true
-          ? { allowPrivateNetwork: true }
-          : undefined;
+      const webhookPolicy = resolveCronWebhookPolicy(params.cfg);
 
       // Webhook mode requires a URL - fail closed if missing
       if (mode === "webhook" && !to) {
@@ -420,10 +421,7 @@ export function buildGatewayCronService(params: {
       params.broadcast("cron", evt, { dropIfSlow: true });
       if (evt.action === "finished") {
         const webhookToken = normalizeOptionalString(params.cfg.cron?.webhookToken);
-        const webhookPolicy: SsrFPolicy | undefined =
-          params.cfg.cron?.webhookAllowPrivateNetwork === true
-            ? { allowPrivateNetwork: true }
-            : undefined;
+        const webhookPolicy = resolveCronWebhookPolicy(params.cfg);
         const legacyWebhook = normalizeOptionalString(params.cfg.cron?.webhook);
         const job = cron.getJob(evt.jobId);
         const legacyNotify = (job as { notify?: unknown } | undefined)?.notify === true;
