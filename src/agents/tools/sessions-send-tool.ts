@@ -249,6 +249,7 @@ export function createSessionsSendTool(opts?: {
       const visibilityGuard = await createSessionVisibilityGuard({
         action: "send",
         requesterSessionKey: effectiveRequesterKey,
+        requesterAgentId,
         visibility: sessionVisibility,
         a2aPolicy,
       });

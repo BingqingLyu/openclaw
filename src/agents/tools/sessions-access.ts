@@ -216,12 +216,16 @@ function treeVisibilityMessage(action: SessionAccessAction): string {
 export async function createSessionVisibilityGuard(params: {
   action: SessionAccessAction;
   requesterSessionKey: string;
+  requesterAgentId?: string;
   visibility: SessionToolsVisibility;
   a2aPolicy: AgentToAgentPolicy;
 }): Promise<{
   check: (targetSessionKey: string) => SessionAccessResult;
 }> {
-  const requesterAgentId = resolveAgentIdFromSessionKey(params.requesterSessionKey);
+  const requesterAgentId =
+    params.requesterAgentId && params.requesterAgentId.trim()
+      ? normalizeAgentId(params.requesterAgentId)
+      : resolveAgentIdFromSessionKey(params.requesterSessionKey);
   const spawnedKeys =
     params.visibility === "tree"
       ? await listSpawnedSessionKeys({ requesterSessionKey: params.requesterSessionKey })

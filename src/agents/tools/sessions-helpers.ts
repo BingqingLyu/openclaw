@@ -92,6 +92,7 @@ export function resolveSessionToolContext(opts?: {
   agentSessionKey?: string;
   sandboxed?: boolean;
   config?: OpenClawConfig;
+  requesterAgentIdOverride?: string;
 }) {
   const cfg = opts?.config ?? loadConfig();
   return {
@@ -99,6 +100,7 @@ export function resolveSessionToolContext(opts?: {
     ...resolveSandboxedSessionToolContext({
       cfg,
       agentSessionKey: opts?.agentSessionKey,
+      agentId: opts?.requesterAgentIdOverride,
       sandboxed: opts?.sandboxed,
     }),
   };
