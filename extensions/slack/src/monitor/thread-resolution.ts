@@ -33,11 +33,45 @@ async function resolveThreadTsFromHistory(params: {
       response.messages?.find((entry) => entry.ts === params.messageTs) ?? response.messages?.[0];
     return normalizeThreadTs(message?.thread_ts);
   } catch (err) {
-    if (shouldLogVerbose()) {
-      logVerbose(
-        `slack inbound: failed to resolve thread_ts via conversations.history for channel=${params.channelId} ts=${params.messageTs}: ${String(err)}`,
-      );
+    logVerbose(
+      `slack inbound: failed to resolve thread_ts via conversations.history for channel=${params.channelId} ts=${params.messageTs}: ${String(err)}`,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * Bounded fallback: try conversations.replies to resolve thread_ts when
+ * conversations.history fails. This is more expensive (Tier 3 API) so
+ * we only call it as a second attempt.
+ */
+async function resolveThreadTsFromReplies(params: {
+  client: SlackWebClient;
+  channelId: string;
+  messageTs: string;
+}) {
+  try {
+    // conversations.replies with the message ts as the thread ts will
+    // succeed if the message is actually a thread reply — Slack returns
+    // the parent's thread_ts in the response.
+    const response = (await params.client.conversations.replies({
+      channel: params.channelId,
+      ts: params.messageTs,
+      limit: 1,
+      inclusive: true,
+    })) as { messages?: Array<{ ts?: string; thread_ts?: string }> };
+    const msg = response.messages?.[0];
+    const threadTs = normalizeThreadTs(msg?.thread_ts);
+    // Only return if the resolved thread_ts differs from the message ts
+    // (i.e., this message belongs to a parent thread).
+    if (threadTs && threadTs !== params.messageTs) {
+      return threadTs;
     }
+    return undefined;
+  } catch (err) {
+    logVerbose(
+      `slack inbound: failed to resolve thread_ts via conversations.replies for channel=${params.channelId} ts=${params.messageTs}: ${String(err)}`,
+    );
     return undefined;
   }
 }
@@ -112,6 +146,24 @@ export function createSlackThreadTsResolver(params: {
         inflight.delete(cacheKey);
       }
 
+      // Bounded fallback: if conversations.history didn't resolve it,
+      // try conversations.replies as a second attempt before giving up.
+      if (!resolved) {
+        logVerbose(
+          `slack inbound: conversations.history miss for channel=${message.channel} ts=${message.ts}, trying conversations.replies fallback`,
+        );
+        resolved = await resolveThreadTsFromReplies({
+          client: params.client,
+          channelId: message.channel,
+          messageTs: message.ts,
+        });
+        if (resolved) {
+          logVerbose(
+            `slack inbound: resolved missing thread_ts via replies fallback channel=${message.channel} ts=${message.ts} -> thread_ts=${resolved}`,
+          );
+        }
+      }
+
       setCached(cacheKey, resolved ?? null, Date.now());
 
       if (resolved) {
@@ -121,13 +173,15 @@ export function createSlackThreadTsResolver(params: {
         return { ...message, thread_ts: resolved };
       }
 
-      // Log at all verbosity levels: unresolved thread_ts with parent_user_id
-      // means this message will be treated as a root message instead of a
-      // thread reply.  This is a silent degradation that should be visible.
+      // Both history and replies failed. Mark as ambiguous thread reply
+      // so downstream code can distinguish this from a genuine root message.
       logVerbose(
-        `slack inbound: WARN thread_ts resolution failed channel=${message.channel} ts=${message.ts} parent_user_id=${message.parent_user_id} — message will be treated as root`,
+        `slack inbound: WARN thread_ts resolution failed (history + replies) channel=${message.channel} ts=${message.ts} parent_user_id=${message.parent_user_id} — marking as ambiguous`,
       );
-      return message;
+      return {
+        ...message,
+        _ambiguousThreadReply: true,
+      } as SlackMessageEvent;
     },
   };
 }
