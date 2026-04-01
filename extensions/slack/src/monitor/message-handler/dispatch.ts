@@ -35,6 +35,7 @@ import {
 } from "../../stream-mode.js";
 import type { SlackStreamSession } from "../../streaming.js";
 import { appendSlackStream, startSlackStream, stopSlackStream } from "../../streaming.js";
+import { persistThreadParticipation } from "../../thread-participation-store.js";
 import { resolveSlackThreadTargets } from "../../threading.js";
 import { normalizeSlackAllowOwnerEntry } from "../allow-list.js";
 import { resolveStorePath, updateLastRoute } from "../config.runtime.js";
@@ -792,6 +793,21 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   const participationThreadTs = usedReplyThreadTs ?? statusThreadTs;
   if (anyReplyDelivered && participationThreadTs) {
     recordSlackThreadParticipation(account.accountId, message.channel, participationThreadTs);
+    persistThreadParticipation(
+      prepared.storePath,
+      account.accountId,
+      message.channel,
+      participationThreadTs,
+      route.agentId,
+    );
+    ctx.logger.info(
+      {
+        channel: message.channel,
+        threadTs: participationThreadTs,
+        agentId: route.agentId,
+      },
+      "slack thread participation recorded (memory + persistent)",
+    );
   }
 
   if (!anyReplyDelivered) {

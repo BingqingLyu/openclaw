@@ -21,4 +21,6 @@ export type PreparedSlackMessage = {
   ackReactionMessageTs?: string;
   ackReactionValue: string;
   ackReactionPromise: Promise<boolean> | null;
+  /** Session store path — used for persistent thread participation. */
+  storePath: string;
 };
