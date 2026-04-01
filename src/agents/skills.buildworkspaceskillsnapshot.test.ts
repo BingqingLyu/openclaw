@@ -196,7 +196,7 @@ describe("buildWorkspaceSkillSnapshot", () => {
     expect(snapshot.prompt).toContain("⚠️ Skills truncated");
     expect(snapshot.prompt).toContain("Additional installed skills not expanded here:");
     expect(snapshot.prompt).toContain("skill-07");
-    expect(snapshot.prompt).toContain("openclaw skills info <name>");
+    expect(snapshot.prompt).toContain('openclaw skills info "<exact skill name>"');
     expect(snapshot.prompt.length).toBeLessThan(2000);
   });
 
@@ -261,12 +261,13 @@ describe("buildWorkspaceSkillSnapshot", () => {
     );
 
     expect(snapshot.prompt).toContain("included 1 of 3");
-    expect(snapshot.prompt).toContain("beta-skill");
-    expect(snapshot.prompt).toContain("wechat-reader");
-    expect(snapshot.prompt).toContain("openclaw skills list");
+    expect(snapshot.prompt).toContain("- beta-skill");
+    expect(snapshot.prompt).toContain("- wechat-reader");
+    expect(snapshot.prompt).toContain('openclaw skills info "<exact skill name>"');
+    expect(snapshot.prompt).not.toContain("openclaw skills list");
   });
 
-  it("escapes omitted skill names before adding them to the truncation note", async () => {
+  it("keeps omitted skill names raw and line-separated for skills info lookups", async () => {
     const workspaceDir = await fixtureSuite.createCaseDir("workspace");
     await writeSkill({
       dir: path.join(workspaceDir, "skills", "alpha-skill"),
@@ -282,6 +283,11 @@ describe("buildWorkspaceSkillSnapshot", () => {
       dir: path.join(workspaceDir, "skills", "skill-&-tail"),
       name: "skill-&-tail",
       description: "Ampersand name",
+    });
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "skill-comma"),
+      name: "skill,comma",
+      description: "Comma name",
     });
 
     const snapshot = withWorkspaceHome(workspaceDir, () =>
@@ -299,10 +305,11 @@ describe("buildWorkspaceSkillSnapshot", () => {
       }),
     );
 
-    expect(snapshot.prompt).toContain("skill-&lt;xml&gt;");
-    expect(snapshot.prompt).toContain("skill-&amp;-tail");
-    expect(snapshot.prompt).not.toContain("Additional installed skills not expanded here: skill-<xml>");
-    expect(snapshot.prompt).not.toContain("skill-&-tail.");
+    expect(snapshot.prompt).toContain("- skill-<xml>");
+    expect(snapshot.prompt).toContain("- skill-&-tail");
+    expect(snapshot.prompt).toContain("- skill,comma");
+    expect(snapshot.prompt).not.toContain("skill-&lt;xml&gt;");
+    expect(snapshot.prompt).not.toContain("skill-&amp;-tail");
   });
 
   it("reports the remaining omitted skill count when the truncation note hits its budget", async () => {
@@ -342,6 +349,29 @@ describe("buildWorkspaceSkillSnapshot", () => {
     expect(snapshot.prompt).toContain("tail-skill-01");
     expect(snapshot.prompt).toContain("and 2 more omitted");
     expect(snapshot.prompt).not.toContain("tail-skill-03");
+  });
+
+  it("keeps the final prompt within maxSkillsPromptChars after adding truncation guidance", async () => {
+    const workspaceDir = await cloneTemplateDir(truncationWorkspaceTemplateDir, "workspace");
+    const maxSkillsPromptChars = 650;
+
+    const snapshot = withWorkspaceHome(workspaceDir, () =>
+      buildWorkspaceSkillSnapshot(workspaceDir, {
+        config: {
+          skills: {
+            limits: {
+              maxSkillsInPrompt: 2,
+              maxSkillsPromptChars,
+            },
+          },
+        },
+        managedSkillsDir: path.join(workspaceDir, ".managed"),
+        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+      }),
+    );
+
+    expect(snapshot.prompt).toContain("⚠️ Skills truncated");
+    expect(snapshot.prompt.length).toBeLessThanOrEqual(maxSkillsPromptChars);
   });
 
   it("limits discovery for nested repo-style skills roots (dir/skills/*)", async () => {
