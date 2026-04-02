@@ -280,6 +280,7 @@ export function createSessionStatusTool(opts?: {
       const visibilityGuard = await createSessionVisibilityGuard({
         action: "status",
         requesterSessionKey: visibilityRequesterKey,
+        mainKey,
         visibility: resolveEffectiveSessionToolsVisibility({
           cfg,
           sandboxed: opts?.sandboxed === true,

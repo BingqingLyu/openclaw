@@ -218,6 +218,8 @@ function treeVisibilityMessage(action: SessionAccessAction): string {
 export async function createSessionVisibilityGuard(params: {
   action: SessionAccessAction;
   requesterSessionKey: string;
+  /** Canonical main session suffix from config (`session.mainKey`); required when synthesizing `agent:<id>:<mainKey>` for override flows. */
+  mainKey: string;
   requesterAgentId?: string;
   visibility: SessionToolsVisibility;
   a2aPolicy: AgentToAgentPolicy;
@@ -238,7 +240,10 @@ export async function createSessionVisibilityGuard(params: {
           if (parsed) {
             return `agent:${requesterAgentId}:${parsed.rest}`;
           }
-          return buildAgentMainSessionKey({ agentId: requesterAgentId });
+          return buildAgentMainSessionKey({
+            agentId: requesterAgentId,
+            mainKey: params.mainKey,
+          });
         })();
   const spawnedKeys =
     params.visibility === "tree"
