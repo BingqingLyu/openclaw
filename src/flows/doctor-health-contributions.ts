@@ -25,6 +25,7 @@ import {
   maybeScanExtraGatewayServices,
 } from "../commands/doctor-gateway-services.js";
 import { noteMemorySearchHealth } from "../commands/doctor-memory-search.js";
+import { noteNodeRuntime } from "../commands/doctor-node-runtime.js";
 import {
   noteMacLaunchAgentOverrides,
   noteMacLaunchctlGatewayEnvOverrides,
@@ -356,6 +357,10 @@ async function runHooksModelHealth(ctx: DoctorHealthFlowContext): Promise<void> 
   }
 }
 
+async function runNodeRuntimeHealth(_ctx: DoctorHealthFlowContext): Promise<void> {
+  await noteNodeRuntime();
+}
+
 async function runSystemdLingerHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   if (
     ctx.options.nonInteractive === true ||
@@ -507,6 +512,12 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
       id: "doctor:bundled-plugin-runtime-deps",
       label: "Bundled plugin runtime deps",
       run: runBundledPluginRuntimeDepsHealth,
+    }),
+    createDoctorHealthContribution({
+      id: "doctor:node-runtime",
+      label: "Node.js runtime",
+      hint: "Node version, path, version manager, EOL status",
+      run: runNodeRuntimeHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:state-integrity",
