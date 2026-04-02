@@ -237,4 +237,58 @@ describe("createSessionVisibilityGuard", () => {
         "Session history visibility is restricted to the current session (tools.sessions.visibility=self).",
     });
   });
+
+  it("uses requesterAgentId override when evaluating self visibility", async () => {
+    const guard = await createSessionVisibilityGuard({
+      action: "history",
+      requesterSessionKey: "global",
+      requesterAgentId: "tony",
+      visibility: "self",
+      a2aPolicy: createAgentToAgentPolicy({} as unknown as OpenClawConfig),
+    });
+
+    expect(guard.check("agent:tony:main")).toEqual({ allowed: true });
+    expect(guard.check("agent:tony:subagent:worker-1")).toEqual({
+      allowed: false,
+      status: "forbidden",
+      error:
+        "Session history visibility is restricted to the current session (tools.sessions.visibility=self).",
+    });
+  });
+
+  it("roots tree visibility checks to requesterAgentId override", async () => {
+    const callGatewayMock = vi.fn(
+      async (request: { method?: string; params?: { spawnedBy?: string } }) => {
+        if (request.method === "sessions.list") {
+          return request.params?.spawnedBy === "agent:tony:main"
+            ? { sessions: [{ key: "agent:tony:subagent:worker-1" }] }
+            : { sessions: [] };
+        }
+        return {};
+      },
+    );
+    sessionsResolutionTesting.setDepsForTest({
+      callGateway: callGatewayMock as never,
+    });
+
+    const guard = await createSessionVisibilityGuard({
+      action: "list",
+      requesterSessionKey: "global",
+      requesterAgentId: "tony",
+      visibility: "tree",
+      a2aPolicy: createAgentToAgentPolicy({} as unknown as OpenClawConfig),
+    });
+
+    expect(guard.check("agent:tony:subagent:worker-1")).toEqual({ allowed: true });
+    expect(callGatewayMock).toHaveBeenCalledWith({
+      method: "sessions.list",
+      params: {
+        includeGlobal: false,
+        includeUnknown: false,
+        spawnedBy: "agent:tony:main",
+      },
+    });
+
+    sessionsResolutionTesting.setDepsForTest();
+  });
 });

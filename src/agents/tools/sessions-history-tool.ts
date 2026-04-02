@@ -238,6 +238,7 @@ export function createSessionsHistoryTool(opts?: {
       const visibilityGuard = await createSessionVisibilityGuard({
         action: "history",
         requesterSessionKey: effectiveRequesterKey,
+        requesterAgentId,
         visibility,
         a2aPolicy,
       });

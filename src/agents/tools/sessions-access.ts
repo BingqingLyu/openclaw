@@ -1,7 +1,9 @@
 import type { OpenClawConfig } from "../../config/config.js";
 import {
+  buildAgentMainSessionKey,
   isSubagentSessionKey,
   normalizeAgentId,
+  parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
 } from "../../routing/session-key.js";
 import {
@@ -222,13 +224,27 @@ export async function createSessionVisibilityGuard(params: {
 }): Promise<{
   check: (targetSessionKey: string) => SessionAccessResult;
 }> {
+  const requesterSessionKey = params.requesterSessionKey.trim();
+  const requesterAgentIdFromSessionKey = resolveAgentIdFromSessionKey(requesterSessionKey);
   const requesterAgentId =
     params.requesterAgentId && params.requesterAgentId.trim()
       ? normalizeAgentId(params.requesterAgentId)
-      : resolveAgentIdFromSessionKey(params.requesterSessionKey);
+      : requesterAgentIdFromSessionKey;
+  const effectiveRequesterVisibilitySessionKey =
+    requesterAgentId === requesterAgentIdFromSessionKey
+      ? requesterSessionKey
+      : (() => {
+          const parsed = parseAgentSessionKey(requesterSessionKey);
+          if (parsed) {
+            return `agent:${requesterAgentId}:${parsed.rest}`;
+          }
+          return buildAgentMainSessionKey({ agentId: requesterAgentId });
+        })();
   const spawnedKeys =
     params.visibility === "tree"
-      ? await listSpawnedSessionKeys({ requesterSessionKey: params.requesterSessionKey })
+      ? await listSpawnedSessionKeys({
+          requesterSessionKey: effectiveRequesterVisibilitySessionKey,
+        })
       : null;
 
   const check = (targetSessionKey: string): SessionAccessResult => {
@@ -259,7 +275,10 @@ export async function createSessionVisibilityGuard(params: {
       return { allowed: true };
     }
 
-    if (params.visibility === "self" && targetSessionKey !== params.requesterSessionKey) {
+    if (
+      params.visibility === "self" &&
+      targetSessionKey !== effectiveRequesterVisibilitySessionKey
+    ) {
       return {
         allowed: false,
         status: "forbidden",
@@ -269,7 +288,7 @@ export async function createSessionVisibilityGuard(params: {
 
     if (
       params.visibility === "tree" &&
-      targetSessionKey !== params.requesterSessionKey &&
+      targetSessionKey !== effectiveRequesterVisibilitySessionKey &&
       !spawnedKeys?.has(targetSessionKey)
     ) {
       return {
