@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { ChannelId } from "../../channels/plugins/types.js";
+import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import {
+  createChannelTestPluginBase,
+  createTestRegistry,
+} from "../../test-utils/channel-plugins.js";
 import { buildReplyPayloads } from "./agent-runner-payloads.js";
 
 const baseParams = {
@@ -190,8 +196,32 @@ describe("buildReplyPayloads media filter integration", () => {
     await expectSameTargetDuplicateRepliesSuppressed({ provider: "message", to: "ou_abc123" });
   });
 
-  it("deduplicates same-target replies when target provider is channel alias", async () => {
-    await expectSameTargetDuplicateRepliesSuppressed({ provider: "lark", to: "ou_abc123" });
+  describe("channel alias resolution (requires plugin registry)", () => {
+    beforeAll(() => {
+      const feishuPlugin = {
+        ...createChannelTestPluginBase({ id: "feishu" as ChannelId }),
+        meta: {
+          id: "feishu" as ChannelId,
+          label: "Feishu",
+          selectionLabel: "Feishu",
+          docsPath: "/channels/feishu",
+          blurb: "test stub.",
+          aliases: ["lark"],
+        },
+      };
+      setActivePluginRegistry(
+        createTestRegistry([
+          { pluginId: "feishu", plugin: feishuPlugin, source: "test" },
+        ]),
+      );
+    });
+    afterAll(() => {
+      setActivePluginRegistry(createTestRegistry([]));
+    });
+
+    it("deduplicates same-target replies when target provider is channel alias", async () => {
+      await expectSameTargetDuplicateRepliesSuppressed({ provider: "lark", to: "ou_abc123" });
+    });
   });
 
   it("does not suppress final reply when message tool sent media-only to same target", async () => {

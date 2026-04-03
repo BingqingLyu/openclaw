@@ -787,10 +787,11 @@ describe("createFollowupRunner messaging tool dedupe", () => {
     expect(onBlockReply).toHaveBeenCalledTimes(1);
   });
 
-  it("suppresses replies when a messaging tool sent via the same provider + target", async () => {
+  it("suppresses duplicate text replies when messaging tool sent to the same provider + target", async () => {
     const { onBlockReply } = await runMessagingCase({
       agentResult: {
-        ...makeTextReplyDedupeResult(),
+        payloads: [{ text: "hello world!" }],
+        messagingToolSentTexts: ["hello world!"],
         messagingToolSentTargets: [{ tool: "slack", provider: "slack", to: "channel:C1" }],
       },
       queued: baseQueuedRun("slack"),
@@ -799,10 +800,23 @@ describe("createFollowupRunner messaging tool dedupe", () => {
     expect(onBlockReply).not.toHaveBeenCalled();
   });
 
-  it("suppresses replies when provider is synthetic but originating channel matches", async () => {
+  it("delivers non-duplicate text when messaging tool sent to the same target", async () => {
     const { onBlockReply } = await runMessagingCase({
       agentResult: {
         ...makeTextReplyDedupeResult(),
+        messagingToolSentTargets: [{ tool: "slack", provider: "slack", to: "channel:C1" }],
+      },
+      queued: baseQueuedRun("slack"),
+    });
+
+    expect(onBlockReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("suppresses duplicate text replies when provider is synthetic but originating channel matches", async () => {
+    const { onBlockReply } = await runMessagingCase({
+      agentResult: {
+        payloads: [{ text: "hello world!" }],
+        messagingToolSentTexts: ["hello world!"],
         messagingToolSentTargets: [{ tool: "telegram", provider: "telegram", to: "268300329" }],
       },
       queued: {
@@ -813,6 +827,20 @@ describe("createFollowupRunner messaging tool dedupe", () => {
     });
 
     expect(onBlockReply).not.toHaveBeenCalled();
+  });
+
+  it("skips dedup when messaging tool sent to a different target", async () => {
+    const { onBlockReply } = await runMessagingCase({
+      agentResult: {
+        payloads: [{ text: "hello world!" }],
+        messagingToolSentTexts: ["hello world!"],
+        messagingToolSentTargets: [{ tool: "slack", provider: "slack", to: "channel:OTHER" }],
+      },
+      queued: baseQueuedRun("slack"),
+    });
+
+    // Same text but different target → cross-target guard prevents dedup
+    expect(onBlockReply).toHaveBeenCalledTimes(1);
   });
 
   it("does not suppress replies for same target when account differs", async () => {
@@ -876,7 +904,8 @@ describe("createFollowupRunner messaging tool dedupe", () => {
 
     const { onBlockReply } = await runMessagingCase({
       agentResult: {
-        ...makeTextReplyDedupeResult(),
+        payloads: [{ text: "hello world!" }],
+        messagingToolSentTexts: ["hello world!"],
         messagingToolSentTargets: [{ tool: "slack", provider: "slack", to: "channel:C1" }],
         meta: {
           agentMeta: {

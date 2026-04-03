@@ -28,7 +28,9 @@ import {
   applyReplyThreading,
   filterMessagingToolDuplicates,
   filterMessagingToolMediaDuplicates,
+  shouldSuppressMessagingToolReplies,
 } from "./reply-payloads.js";
+import { resolveOriginAccountId, resolveOriginMessageTo } from "./origin-routing.js";
 import { resolveReplyToMode } from "./reply-threading.js";
 import { isRoutableChannel, routeReply } from "./route-reply.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
@@ -330,14 +332,38 @@ export function createFollowupRunner(params: {
         replyToChannel,
       });
 
-      const dedupedPayloads = filterMessagingToolDuplicates({
-        payloads: replyTaggedPayloads,
-        sentTexts: runResult.messagingToolSentTexts ?? [],
-      });
-      const mediaFilteredPayloads = filterMessagingToolMediaDuplicates({
-        payloads: dedupedPayloads,
-        sentMediaUrls: runResult.messagingToolSentMediaUrls ?? [],
-      });
+      // Only dedupe against messaging tool sends for the same origin target.
+      // Cross-target sends (e.g. posting to another channel) must not suppress
+      // the current conversation's final reply.
+      const messagingToolSentTargets = runResult.messagingToolSentTargets ?? [];
+      const messagingToolTargetsMatchOrigin =
+        shouldSuppressMessagingToolReplies({
+          messageProvider: resolveOriginMessageProvider({
+            originatingChannel: queued.originatingChannel,
+            provider: queued.run.messageProvider,
+          }),
+          messagingToolSentTargets,
+          originatingTo: resolveOriginMessageTo({
+            originatingTo: queued.originatingTo,
+          }),
+          accountId: resolveOriginAccountId({
+            originatingAccountId: queued.originatingAccountId,
+          }),
+        });
+      const dedupeMessagingToolPayloads =
+        messagingToolTargetsMatchOrigin || messagingToolSentTargets.length === 0;
+      const dedupedPayloads = dedupeMessagingToolPayloads
+        ? filterMessagingToolDuplicates({
+            payloads: replyTaggedPayloads,
+            sentTexts: runResult.messagingToolSentTexts ?? [],
+          })
+        : replyTaggedPayloads;
+      const mediaFilteredPayloads = dedupeMessagingToolPayloads
+        ? filterMessagingToolMediaDuplicates({
+            payloads: dedupedPayloads,
+            sentMediaUrls: runResult.messagingToolSentMediaUrls ?? [],
+          })
+        : dedupedPayloads;
       const finalPayloads = mediaFilteredPayloads;
 
       if (finalPayloads.length === 0) {
