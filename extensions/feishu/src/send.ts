@@ -218,10 +218,10 @@ function parseInteractiveCardContent(parsed: unknown): string {
         }
         const node = sub as { tag?: string; text?: string; href?: string };
         if (node.tag === "text" && typeof node.text === "string" && node.text.trim()) {
-          texts.push(node.text);
+          texts.push(node.text.trim());
         }
         if (node.tag === "a" && typeof node.text === "string" && node.text.trim()) {
-          texts.push(typeof node.href === "string" ? `${node.text} (${node.href})` : node.text);
+          texts.push(typeof node.href === "string" ? `${node.text.trim()} (${node.href})` : node.text.trim());
         }
       }
       continue;
