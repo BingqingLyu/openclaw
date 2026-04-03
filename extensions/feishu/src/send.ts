@@ -181,33 +181,79 @@ function parseInteractiveCardContent(parsed: unknown): string {
     return "[Interactive Card]";
   }
 
+  const texts: string[] = [];
+  const candidate = parsed as {
+    title?: string;
+    header?: { title?: { content?: string } };
+    elements?: unknown[];
+    body?: { elements?: unknown[] };
+  };
+
+  // Extract header/title — card template uses header.title.content,
+  // post-format fallback uses a top-level title string.
+  if (typeof candidate.header?.title?.content === "string" && candidate.header.title.content.trim()) {
+    texts.push(candidate.header.title.content);
+  } else if (typeof candidate.title === "string" && candidate.title.trim()) {
+    texts.push(candidate.title);
+  }
+
   // Support both schema 1.0 (top-level `elements`) and 2.0 (`body.elements`).
-  const candidate = parsed as { elements?: unknown; body?: { elements?: unknown } };
   const elements = Array.isArray(candidate.elements)
     ? candidate.elements
     : Array.isArray(candidate.body?.elements)
       ? candidate.body!.elements
       : null;
   if (!elements) {
-    return "[Interactive Card]";
+    return texts.join("\n").trim() || "[Interactive Card]";
   }
 
-  const texts: string[] = [];
   for (const element of elements) {
+    // Handle nested arrays — Feishu API returns post-format fallback content
+    // for interactive cards as `[[{tag:"text",...}, ...]]` instead of the
+    // original card template `[{tag:"div",...}, ...]`.
+    if (Array.isArray(element)) {
+      for (const sub of element) {
+        if (!sub || typeof sub !== "object") {
+          continue;
+        }
+        const node = sub as { tag?: string; text?: string; href?: string };
+        if (node.tag === "text" && typeof node.text === "string" && node.text.trim()) {
+          texts.push(node.text);
+        }
+        if (node.tag === "a" && typeof node.text === "string" && node.text.trim()) {
+          texts.push(typeof node.href === "string" ? `${node.text} (${node.href})` : node.text);
+        }
+      }
+      continue;
+    }
+
     if (!element || typeof element !== "object") {
       continue;
     }
     const item = element as {
       tag?: string;
       content?: string;
-      text?: { content?: string };
+      text?: { content?: string } | string;
     };
-    if (item.tag === "div" && typeof item.text?.content === "string") {
-      texts.push(item.text.content);
+
+    // Card template format: div with nested text.content
+    if (item.tag === "div" && typeof (item.text as { content?: string })?.content === "string") {
+      texts.push((item.text as { content: string }).content);
       continue;
     }
+    // Card template format: markdown block
     if (item.tag === "markdown" && typeof item.content === "string") {
       texts.push(item.content);
+      continue;
+    }
+    // Card template format: plain_text block
+    if (item.tag === "plain_text" && typeof item.content === "string") {
+      texts.push(item.content);
+      continue;
+    }
+    // Fallback flat format: text element with direct string
+    if (item.tag === "text" && typeof item.text === "string" && (item.text as string).trim()) {
+      texts.push(item.text as string);
     }
   }
   return texts.join("\n").trim() || "[Interactive Card]";

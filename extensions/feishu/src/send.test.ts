@@ -163,6 +163,120 @@ describe("getMessageFeishu", () => {
     );
   });
 
+  it("extracts text from interactive card with post-format fallback content", async () => {
+    // Feishu API returns post-format fallback for interactive cards:
+    // elements is a nested array [[{tag:"text",...}]] instead of [{tag:"div",...}]
+    mockClientGet.mockResolvedValueOnce({
+      code: 0,
+      data: {
+        items: [
+          {
+            message_id: "om_card_fallback",
+            chat_id: "oc_card_fallback",
+            msg_type: "interactive",
+            body: {
+              content: JSON.stringify({
+                title: "\uD83E\uDD16 clawdbot",
+                elements: [
+                  [
+                    { tag: "img", image_key: "img_v3_example" },
+                    { tag: "text", text: "Daily report summary" },
+                    { tag: "text", text: "13 people missing reports" },
+                  ],
+                ],
+              }),
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await getMessageFeishu({
+      cfg: {} as ClawdbotConfig,
+      messageId: "om_card_fallback",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        messageId: "om_card_fallback",
+        contentType: "interactive",
+        content: "\uD83E\uDD16 clawdbot\nDaily report summary\n13 people missing reports",
+      }),
+    );
+  });
+
+  it("extracts header.title.content from card template format", async () => {
+    mockClientGet.mockResolvedValueOnce({
+      code: 0,
+      data: {
+        items: [
+          {
+            message_id: "om_card_header",
+            chat_id: "oc_card_header",
+            msg_type: "interactive",
+            body: {
+              content: JSON.stringify({
+                header: { title: { content: "Card Title" } },
+                elements: [
+                  { tag: "markdown", content: "body text" },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await getMessageFeishu({
+      cfg: {} as ClawdbotConfig,
+      messageId: "om_card_header",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        messageId: "om_card_header",
+        content: "Card Title\nbody text",
+      }),
+    );
+  });
+
+  it("extracts links from post-format fallback with anchor tags", async () => {
+    mockClientGet.mockResolvedValueOnce({
+      code: 0,
+      data: {
+        items: [
+          {
+            message_id: "om_card_links",
+            chat_id: "oc_card_links",
+            msg_type: "interactive",
+            body: {
+              content: JSON.stringify({
+                title: "Report",
+                elements: [
+                  [
+                    { tag: "text", text: "See: " },
+                    { tag: "a", text: "Weekly Report", href: "https://example.com/report" },
+                  ],
+                ],
+              }),
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await getMessageFeishu({
+      cfg: {} as ClawdbotConfig,
+      messageId: "om_card_links",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        content: "Report\nSee:\nWeekly Report (https://example.com/report)",
+      }),
+    );
+  });
+
   it("extracts text content from post messages", async () => {
     mockClientGet.mockResolvedValueOnce({
       code: 0,
