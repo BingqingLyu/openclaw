@@ -118,10 +118,15 @@ function rewriteLine(line, mcpServers) {
 
 const { targetCommand, mcpServers } = decodePayload(process.argv.slice(2));
 const target = splitCommandLine(targetCommand);
-const child = spawn(target.command, target.args, {
+const spawnOptions = {
   stdio: ["pipe", "pipe", "inherit"],
   env: process.env,
-});
+};
+// On Windows, hide the spawned terminal window to prevent it from flashing
+if (process.platform === "win32") {
+  spawnOptions.windowsHide = true;
+}
+const child = spawn(target.command, target.args, spawnOptions);
 
 if (!child.stdin || !child.stdout) {
   throw new Error("Failed to create MCP proxy stdio pipes");
