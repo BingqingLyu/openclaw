@@ -33,7 +33,7 @@ openclaw config set agents.defaults.videoGenerationModel.primary "google/veo-3.1
 
 > Generate a 5-second cinematic video of a friendly lobster surfing at sunset.
 
-The agent calls `video_generate` automatically. No tool allowlisting is needed.
+The agent calls `video_generate` automatically. No tool allow-listing is needed.
 
 ## What happens when you generate a video
 

@@ -264,6 +264,54 @@ describe("runWithModelFallback", () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
+  it("rethrows context overflow nested in error cause without trying fallback models", async () => {
+    const cfg = makeCfg();
+    const overflowCause = new Error("context length exceeded");
+    const wrapper = new Error("request failed", { cause: overflowCause });
+    const run = vi.fn().mockRejectedValue(wrapper);
+
+    await expect(
+      runWithModelFallback({
+        cfg,
+        provider: "openai",
+        model: "gpt-4.1-mini",
+        run,
+      }),
+    ).rejects.toBe(wrapper);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("rethrows context overflow only in cause when outer message is empty", async () => {
+    const cfg = makeCfg();
+    const overflowCause = new Error("maximum context length exceeded");
+    const wrapper = new Error("", { cause: overflowCause });
+    const run = vi.fn().mockRejectedValue(wrapper);
+
+    await expect(
+      runWithModelFallback({
+        cfg,
+        provider: "openai",
+        model: "gpt-4.1-mini",
+        run,
+      }),
+    ).rejects.toBe(wrapper);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves outer billing failover before inner overflow hints", async () => {
+    const overflowCause = new Error("context length exceeded");
+    const wrapper = new Error(
+      "Your credit balance is too low to access the Anthropic API.",
+      { cause: overflowCause },
+    );
+
+    await expectFallsBackToHaiku({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      firstError: wrapper,
+    });
+  });
+
   it("treats LiveSessionModelSwitchError as failover on last candidate (#58466)", async () => {
     const cfg = makeCfg();
     const switchError = new LiveSessionModelSwitchError({
@@ -564,7 +612,9 @@ describe("runWithModelFallback", () => {
   });
 
   it("sanitizes model identifiers in model_not_found warnings", async () => {
-    setLoggerOverride({ level: "silent", consoleLevel: "warn" });
+    const originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    setLoggerOverride({ level: "silent", consoleLevel: "warn", consoleStyle: "compact" });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const cfg = makeCfg();
@@ -591,6 +641,7 @@ describe("runWithModelFallback", () => {
       warnSpy.mockRestore();
       setLoggerOverride(null);
       resetLogger();
+      process.env.NO_COLOR = originalNoColor ?? undefined;
     }
   });
 

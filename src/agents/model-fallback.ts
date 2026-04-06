@@ -16,6 +16,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import {
   FailoverError,
   coerceToFailoverError,
+  collectErrorChainMessages,
   describeFailoverError,
   isFailoverError,
   isTimeoutError,
@@ -755,7 +756,9 @@ export async function runWithModelFallback<T>(params: {
         i > 0 ? attempts.find((a) => a.reason === "model_not_found") : undefined;
       if (notFoundAttempt) {
         log.warn(
-          `Model "${sanitizeForLog(notFoundAttempt.provider)}/${sanitizeForLog(notFoundAttempt.model)}" not found. Fell back to "${sanitizeForLog(candidate.provider)}/${sanitizeForLog(candidate.model)}".`,
+          sanitizeForLog(
+            `Model "${notFoundAttempt.provider}/${notFoundAttempt.model}" not found. Fell back to "${candidate.provider}/${candidate.model}".`,
+          ),
         );
       }
       return attemptRun.success;
@@ -772,8 +775,11 @@ export async function runWithModelFallback<T>(params: {
       // compaction/retry logic, not by model fallback.  If one escapes as a
       // throw, rethrow it immediately rather than trying a different model
       // that may have a smaller context window and fail worse.
-      const errMessage = err instanceof Error ? err.message : String(err);
-      if (isLikelyContextOverflowError(errMessage)) {
+      const primaryReason = describeFailoverError(err).reason;
+      if (
+        !primaryReason &&
+        collectErrorChainMessages(err).some((segment) => isLikelyContextOverflowError(segment))
+      ) {
         throw err;
       }
       const normalized =

@@ -21,6 +21,7 @@ import {
 } from "../auth-profiles.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import {
+  collectErrorChainMessages,
   coerceToFailoverError,
   describeFailoverError,
   FailoverError,
@@ -45,6 +46,7 @@ import {
   type FailoverReason,
   formatAssistantErrorText,
   isAuthAssistantError,
+  isBillingErrorMessage,
   isBillingAssistantError,
   isCompactionFailureError,
   isFailoverAssistantError,
@@ -785,8 +787,17 @@ export async function runEmbeddedPiAgent(
           const contextOverflowError = !aborted
             ? (() => {
                 if (promptError) {
-                  const errorText = describeUnknownError(promptError);
-                  if (isLikelyContextOverflowError(errorText)) {
+                  const errorTexts = Array.from(
+                    new Set([
+                      describeUnknownError(promptError),
+                      ...collectErrorChainMessages(promptError),
+                    ].filter((value) => value.length > 0)),
+                  );
+                  const errorText = errorTexts.find((text) => isLikelyContextOverflowError(text));
+                  if (
+                    errorText &&
+                    !errorTexts.some((text) => text !== errorText && isBillingErrorMessage(text))
+                  ) {
                     return { text: errorText, source: "promptError" as const };
                   }
                   // Prompt submission failed with a non-overflow error. Do not

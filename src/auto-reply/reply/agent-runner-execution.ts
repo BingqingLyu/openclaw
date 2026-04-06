@@ -5,6 +5,7 @@ import {
   resolveSendableOutboundReplyParts,
 } from "openclaw/plugin-sdk/reply-payload";
 import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-budget.js";
+import { collectErrorChainMessages } from "../../agents/failover-error.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import { runWithModelFallback, isFallbackSummaryError } from "../../agents/model-fallback.js";
 import {
@@ -91,6 +92,22 @@ export type AgentRunLoopResult =
       directlySentBlockKeys?: Set<string>;
     }
   | { kind: "final"; payload: ReplyPayload };
+
+function buildErrorClassificationInput(err: unknown): {
+  message: string;
+  candidates: string[];
+} {
+  const chainMessages = collectErrorChainMessages(err);
+  const fallbackMessage =
+    err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
+  const candidates = Array.from(
+    new Set([fallbackMessage, ...chainMessages].filter((value) => value.length > 0)),
+  );
+  return {
+    message: chainMessages.length > 0 ? chainMessages.join("\n") : fallbackMessage,
+    candidates,
+  };
+}
 
 type FallbackSelectionState = Pick<
   SessionEntry,
@@ -1084,13 +1101,19 @@ export async function runAgentTurnWithFallback(params: {
         fallbackModel = err.model;
         continue;
       }
-      const message = err instanceof Error ? err.message : String(err);
-      const isBilling = isBillingErrorMessage(message);
-      const isContextOverflow = !isBilling && isLikelyContextOverflowError(message);
-      const isCompactionFailure = !isBilling && isCompactionFailureError(message);
-      const isSessionCorruption = /function call turn comes immediately after/i.test(message);
-      const isRoleOrderingError = /incorrect role information|roles must alternate/i.test(message);
-      const isTransientHttp = isTransientHttpError(message);
+      const { message, candidates } = buildErrorClassificationInput(err);
+      const isBilling = candidates.some((value) => isBillingErrorMessage(value));
+      const isContextOverflow =
+        !isBilling && candidates.some((value) => isLikelyContextOverflowError(value));
+      const isCompactionFailure =
+        !isBilling && candidates.some((value) => isCompactionFailureError(value));
+      const isSessionCorruption = candidates.some((value) =>
+        /function call turn comes immediately after/i.test(value),
+      );
+      const isRoleOrderingError = candidates.some((value) =>
+        /incorrect role information|roles must alternate/i.test(value),
+      );
+      const isTransientHttp = candidates.some((value) => isTransientHttpError(value));
 
       if (isReplyOperationRestartAbort(params.replyOperation)) {
         return {
