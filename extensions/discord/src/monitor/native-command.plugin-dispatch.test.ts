@@ -508,6 +508,26 @@ describe("Discord native plugin command dispatch", () => {
     );
   });
 
+  it("returns an explicit warning instead of ✅ Done. when dispatch produces zero visible replies", async () => {
+    const cfg = createConfig();
+    const interaction = createInteraction();
+    runtimeModuleMocks.matchPluginCommand.mockReturnValue(null);
+    runtimeModuleMocks.dispatchReplyWithDispatcher.mockResolvedValue({
+      counts: { final: 0, block: 0, tool: 0 },
+      queuedFinal: false,
+    } as never);
+    const command = await createStatusCommand(cfg);
+
+    await (command as { run: (interaction: unknown) => Promise<void> }).run(interaction as unknown);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "⚠️ Command produced no visible reply.",
+        ephemeral: true,
+      }),
+    );
+  });
+
   it("executes matched plugin commands directly without invoking the agent dispatcher", async () => {
     const cfg = createConfig();
     const commandSpec: NativeCommandSpec = {

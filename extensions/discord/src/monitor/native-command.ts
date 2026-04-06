@@ -15,6 +15,7 @@ import { resolveHumanDelayConfig } from "openclaw/plugin-sdk/agent-runtime";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import { resolveChannelStreamingBlockEnabled } from "openclaw/plugin-sdk/channel-streaming";
 import {
+  resolveCommandAuthorization,
   resolveCommandAuthorizedFromAuthorizers,
   resolveNativeCommandSessionTargets,
 } from "openclaw/plugin-sdk/command-auth-native";
@@ -25,6 +26,7 @@ import { getAgentScopedMediaLocalRoots } from "openclaw/plugin-sdk/media-runtime
 import {
   buildCommandTextFromArgs,
   findCommandByNativeName,
+  listChatCommands,
   parseCommandArgs,
   resolveCommandArgChoices,
   resolveCommandArgMenu,
@@ -1067,7 +1069,7 @@ async function dispatchDiscordCommandInteraction(params: {
       threadParentId,
     });
     if (!hasRenderableReplyPayload(pluginReply)) {
-      await respond("Done.");
+      await respond("⚠️ Command produced no visible reply.");
       return;
     }
     await deliverDiscordInteractionReply({
@@ -1151,6 +1153,13 @@ async function dispatchDiscordCommandInteraction(params: {
     sender: { id: sender.id, name: sender.name, tag: sender.tag },
   });
 
+  const resolvedCommandAuth = resolveCommandAuthorization({
+    ctx: ctxPayload,
+    cfg,
+    commandAuthorized,
+  });
+  const isBuiltinCommand = listChatCommands().some((entry) => entry.key === command.key);
+
   const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({
     cfg,
     agentId: effectiveRoute.agentId,
@@ -1161,6 +1170,14 @@ async function dispatchDiscordCommandInteraction(params: {
   const blockStreamingEnabled = resolveChannelStreamingBlockEnabled(discordConfig);
 
   let didReply = false;
+  if (isBuiltinCommand && !resolvedCommandAuth.isAuthorizedSender) {
+    log.warn(
+      `discord native command auth mismatch command=${command.key} user=${sender.id} channel=${channelId} session=${commandTargetSessionKey ?? sessionKey ?? "unknown"} nativeAuthorized=${commandAuthorized} sharedAuthorized=${resolvedCommandAuth.isAuthorizedSender}`,
+    );
+    await respond("You are not authorized to use this command.", { ephemeral: true });
+    return;
+  }
+
   const dispatchResult = await dispatchReplyWithDispatcherImpl({
     ctx: ctxPayload,
     cfg,
@@ -1217,7 +1234,7 @@ async function dispatchDiscordCommandInteraction(params: {
   ) {
     await safeDiscordInteractionCall("interaction empty fallback", async () => {
       const payload = {
-        content: "✅ Done.",
+        content: "⚠️ Command produced no visible reply.",
         ephemeral: true,
       };
       if (preferFollowUp) {
