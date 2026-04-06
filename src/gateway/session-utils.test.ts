@@ -9,6 +9,7 @@ import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import {
   capArrayByJsonBytes,
   classifySessionKey,
+  collectCombinedSessionStoreStatFingerprint,
   deriveSessionTitle,
   listAgentsForGateway,
   listSessionsFromStore,

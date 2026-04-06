@@ -33,7 +33,7 @@ export function createSubagentRunManager(params: {
   runs: Map<string, SubagentRunRecord>;
   resumedRuns: Set<string>;
   endedHookInFlightRunIds: Set<string>;
-  persist(): void;
+  persist(opts?: { bumpGeneration?: boolean }): void;
   callGateway: typeof callGateway;
   loadConfig: typeof loadConfig;
   ensureRuntimePluginsLoaded:
@@ -112,7 +112,7 @@ export function createSubagentRunManager(params: {
         mutated = true;
       }
       if (mutated) {
-        params.persist();
+        params.persist({ bumpGeneration: true });
       }
       await params.completeSubagentRun({
         runId,
@@ -247,7 +247,7 @@ export function createSubagentRunManager(params: {
 
     params.runs.set(nextRunId, next);
     params.ensureListener();
-    params.persist();
+    params.persist({ bumpGeneration: true });
     if (archiveAtMs) {
       params.startSweeper();
     }
@@ -337,7 +337,7 @@ export function createSubagentRunManager(params: {
       });
     }
     params.ensureListener();
-    params.persist();
+    params.persist({ bumpGeneration: true });
     if (archiveAtMs) {
       params.startSweeper();
     }
@@ -361,7 +361,7 @@ export function createSubagentRunManager(params: {
     }
     const didDelete = params.runs.delete(runId);
     if (didDelete) {
-      params.persist();
+      params.persist({ bumpGeneration: true });
     }
     if (params.runs.size === 0) {
       params.stopSweeper();
@@ -413,7 +413,7 @@ export function createSubagentRunManager(params: {
       updated += 1;
     }
     if (updated > 0) {
-      params.persist();
+      params.persist({ bumpGeneration: true });
       for (const entry of entriesByChildSessionKey.values()) {
         void persistSubagentSessionTiming(entry).catch((err) => {
           log.warn("failed to persist killed subagent session timing", {

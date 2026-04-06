@@ -94,6 +94,14 @@ let subagentRegistryRuntimePromise: Promise<
   typeof import("./subagent-registry.runtime.js")
 > | null = null;
 
+/** Monotonic counter bumped on every registry mutation; used to invalidate caches that depend on subagent state. */
+let subagentRegistryGeneration = 0;
+
+/** Return the current monotonic generation counter for the subagent registry. */
+export function getSubagentRegistryGeneration(): number {
+  return subagentRegistryGeneration;
+}
+
 let sweeper: NodeJS.Timeout | null = null;
 let listenerStarted = false;
 let listenerStop: (() => void) | null = null;
@@ -136,7 +144,21 @@ async function resolveSubagentRegistryContextEngine(cfg: ReturnType<typeof loadC
   return await resolveContextEngine(cfg);
 }
 
-function persistSubagentRuns() {
+/**
+ * Persist the current subagent-runs map to disk.
+ *
+ * IMPORTANT: pass `{ bumpGeneration: true }` only when the preceding mutation
+ * changed `sessions.list`-visible subagent state (for example Map .set() /
+ * .delete(), or endedAt/outcome/endedReason/startedAt/sessionStartedAt changes).
+ *
+ * Bookkeeping-only updates can persist without a generation bump when safe
+ * (for example steer-restart suppression flags and ended-hook bookkeeping),
+ * to avoid invalidating list caches unnecessarily.
+ */
+function persistSubagentRuns(opts?: { bumpGeneration?: boolean }) {
+  if (opts?.bumpGeneration === true) {
+    subagentRegistryGeneration += 1;
+  }
   subagentRegistryDeps.persistSubagentRunsToDisk(subagentRuns);
 }
 
@@ -319,7 +341,7 @@ function resumeSubagentRun(runId: string) {
         resumedRuns,
       })
     ) {
-      persistSubagentRuns();
+      persistSubagentRuns({ bumpGeneration: true });
     }
     return;
   }
@@ -403,7 +425,7 @@ function restoreSubagentRunsOnce() {
         resumedRuns,
       })
     ) {
-      persistSubagentRuns();
+      persistSubagentRuns({ bumpGeneration: true });
     }
     if (subagentRuns.size === 0) {
       return;
@@ -494,7 +516,7 @@ async function sweepSubagentRuns() {
     }
   }
   if (mutated) {
-    persistSubagentRuns();
+    persistSubagentRuns({ bumpGeneration: true });
   }
   if (subagentRuns.size === 0) {
     stopSweeper();
@@ -527,7 +549,7 @@ function ensureListener() {
           if (typeof entry.sessionStartedAt !== "number") {
             entry.sessionStartedAt = startedAt;
           }
-          persistSubagentRuns();
+          persistSubagentRuns({ bumpGeneration: true });
         }
         return;
       }
@@ -639,7 +661,7 @@ export function resetSubagentRegistryForTests(opts?: { persist?: boolean }) {
   }
   listenerStarted = false;
   if (opts?.persist !== false) {
-    persistSubagentRuns();
+    persistSubagentRuns({ bumpGeneration: true });
   }
 }
 
