@@ -67,8 +67,9 @@ import {
   asRuntimeConfig,
   materializeRuntimeConfig,
 } from "./materialize.js";
-import { applyMergePatch } from "./merge-patch.js";
-import { resolveConfigPath, resolveStateDir } from "./paths.js";
+import { applyMergePatch, createMergePatch } from "./merge-patch.js";
+import { resolveConfigPath, resolveDefaultConfigCandidates, resolveStateDir } from "./paths.js";
+import { isBlockedObjectKey } from "./prototype-keys.js";
 import { applyConfigOverrides } from "./runtime-overrides.js";
 import {
   clearRuntimeConfigSnapshot as clearRuntimeConfigSnapshotState,
@@ -247,6 +248,24 @@ function resolveGatewayMode(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function cloneUnknown<T>(value: T): T {
+  return structuredClone(value);
+}
+
+function projectSourceOntoRuntimeShape(source: unknown, runtime: unknown): unknown {
+  if (!isRecord(source) || !isRecord(runtime)) {
+    return cloneUnknown(source);
+  }
+
+  const next: Record<string, unknown> = {};
+  for (const [key, sourceValue] of Object.entries(source)) {
+    if (!(key in runtime)) {
+      continue;
+    }
+    next[key] = projectSourceOntoRuntimeShape(sourceValue, runtime[key]);
+  }
+  return next;
+}
 function collectEnvRefPaths(value: unknown, path: string, output: Map<string, string>): void {
   if (typeof value === "string") {
     if (containsEnvVarReference(value)) {

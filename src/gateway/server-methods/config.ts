@@ -660,6 +660,7 @@ export const configHandlers: GatewayRequestHandlers = {
     );
     queueSharedGatewayAuthGenerationRefresh(true, validated.config, context);
     queueSharedGatewayAuthDisconnect(disconnectSharedAuthClients, context);
+    return;
   },
   "config.apply": async ({ params, respond, client, context }) => {
     if (!assertValidParams(params, validateConfigApplyParams, "config.apply", respond)) {
