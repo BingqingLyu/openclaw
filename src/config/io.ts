@@ -67,12 +67,10 @@ import {
   asRuntimeConfig,
   materializeRuntimeConfig,
 } from "./materialize.js";
-import { applyMergePatch, createMergePatch } from "./merge-patch.js";
+import { applyMergePatch } from "./merge-patch.js";
 import { resolveConfigPath, resolveDefaultConfigCandidates, resolveStateDir } from "./paths.js";
-import { isBlockedObjectKey } from "./prototype-keys.js";
 import { applyConfigOverrides } from "./runtime-overrides.js";
 import {
-  clearRuntimeConfigSnapshot as clearRuntimeConfigSnapshotState,
   finalizeRuntimeSnapshotWrite,
   getRuntimeConfigSnapshot as getRuntimeConfigSnapshotState,
   getRuntimeConfigSourceSnapshot as getRuntimeConfigSourceSnapshotState,
@@ -82,6 +80,7 @@ import {
   resetConfigRuntimeState as resetConfigRuntimeStateState,
   setRuntimeConfigSnapshot as setRuntimeConfigSnapshotState,
   setRuntimeConfigSnapshotRefreshHandler as setRuntimeConfigSnapshotRefreshHandlerState,
+  type RuntimeConfigSnapshotRefreshHandler,
   type RuntimeConfigWriteNotification,
 } from "./runtime-snapshot.js";
 import { resolveShellEnvExpectedKeys } from "./shell-env-expected-keys.js";
@@ -91,15 +90,6 @@ import {
   validateConfigObjectWithPlugins,
 } from "./validation.js";
 import { shouldWarnOnTouchedVersion } from "./version.js";
-
-export {
-  clearRuntimeConfigSnapshotState as clearRuntimeConfigSnapshot,
-  getRuntimeConfigSnapshotState as getRuntimeConfigSnapshot,
-  getRuntimeConfigSourceSnapshotState as getRuntimeConfigSourceSnapshot,
-  resetConfigRuntimeStateState as resetConfigRuntimeState,
-  setRuntimeConfigSnapshotState as setRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshotRefreshHandlerState as setRuntimeConfigSnapshotRefreshHandler,
-};
 
 // Re-export for backwards compatibility
 export { CircularIncludeError, ConfigIncludeError } from "./includes.js";
@@ -248,24 +238,6 @@ function resolveGatewayMode(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function cloneUnknown<T>(value: T): T {
-  return structuredClone(value);
-}
-
-function projectSourceOntoRuntimeShape(source: unknown, runtime: unknown): unknown {
-  if (!isRecord(source) || !isRecord(runtime)) {
-    return cloneUnknown(source);
-  }
-
-  const next: Record<string, unknown> = {};
-  for (const [key, sourceValue] of Object.entries(source)) {
-    if (!(key in runtime)) {
-      continue;
-    }
-    next[key] = projectSourceOntoRuntimeShape(sourceValue, runtime[key]);
-  }
-  return next;
-}
 function collectEnvRefPaths(value: unknown, path: string, output: Map<string, string>): void {
   if (typeof value === "string") {
     if (containsEnvVarReference(value)) {
