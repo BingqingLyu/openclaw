@@ -83,7 +83,6 @@ export type {
   ProviderWrapStreamFnContext,
   SpeechProviderPlugin,
 } from "./plugin-entry.js";
-<<<<<<< HEAD
 export type {
   OpenClawPluginToolContext,
   OpenClawPluginToolFactory,
