@@ -190,6 +190,10 @@ export function createFollowupRunner(params: {
           model: run.model,
           runId,
           agentDir: run.agentDir,
+          // Propagate abort signal so terminal aborts (run-budget timeout,
+          // HTTP client disconnect) skip pointless fallback retries.
+          // Closes openclaw/openclaw#60388.
+          abortSignal: replyOperation.abortSignal,
           fallbacksOverride: resolveRunModelFallbacksOverride({
             cfg: runtimeConfig,
             agentId: run.agentId,

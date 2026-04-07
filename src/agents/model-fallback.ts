@@ -94,7 +94,100 @@ function isFallbackAbortError(err: unknown): boolean {
   return name === "AbortError";
 }
 
-function shouldRethrowAbort(err: unknown): boolean {
+/**
+ * Known terminal-abort reason strings. Some call sites (notably
+ * `src/cron/service/timer.ts:90` and `src/agents/pi-embedded-runner/run/attempt.ts:575`)
+ * pass a plain string to `AbortController.abort()` rather than an Error, so
+ * `isTerminalAbort` has to match against this explicit set instead of relying
+ * on `reason.name`. Keep the set narrow — only known callsites where the run
+ * is genuinely over regardless of which model handles it.
+ */
+const TERMINAL_ABORT_REASON_STRINGS = new Set<string>([
+  // src/cron/service/timer.ts:109-111 `timeoutErrorMessage()` -- cron run budget
+  // exhausted; retrying with a fallback model would get ~0 ms remaining.
+  "cron: job execution timed out",
+]);
+
+/**
+ * "Terminal" aborts are aborts where retrying with another model is wasteful
+ * because the *run* is over regardless of which provider handles it. These
+ * should propagate up immediately instead of triggering the fallback chain.
+ *
+ * Three terminal sources recognized today:
+ *
+ * 1. **Run-budget timeout** (closes openclaw/openclaw#60388, embedded runner):
+ *    when `scheduleAbortTimer` fires, `abortRun(true)` calls
+ *    `runAbortController.abort(makeTimeoutAbortReason())` which tags the
+ *    signal with an Error whose `name === "TimeoutError"`.
+ *
+ * 2. **HTTP client disconnect**: `watchClientDisconnect` in
+ *    `src/gateway/http-common.ts` calls `abortController.abort(new
+ *    ClientDisconnectError())`. After this, no caller is left to receive a
+ *    response, so fallback retries waste tokens.
+ *
+ * 3. **Cron run-budget timeout** (string reason): `src/cron/service/timer.ts:90`
+ *    calls `runAbortController.abort(timeoutErrorMessage())` with the plain
+ *    string `"cron: job execution timed out"`. Same "budget exhausted" situation
+ *    as case 1 but originates from the cron service, not the embedded runner.
+ *
+ * Detection is via `signal.reason` (not via the thrown error) because the
+ * fetch wrapper re-throws aborts as a generic AbortError that loses the
+ * original tag in `.name`. The `signal.reason` survives this round-trip.
+ */
+function isTerminalAbort(signal: AbortSignal | undefined): boolean {
+  if (!signal?.aborted) {
+    return false;
+  }
+  const reason = signal.reason;
+
+  // String-shaped reasons: some legacy call sites pass a plain string instead
+  // of an Error. Match against a known set of terminal reason strings.
+  if (typeof reason === "string") {
+    return TERMINAL_ABORT_REASON_STRINGS.has(reason);
+  }
+
+  // Error-shaped reasons: walk up to one cause level to catch wrapped aborts.
+  // `makeAbortError()` in pi-embedded-runner wraps the original reason in an
+  // outer AbortError with `.cause` set, and our fetch shim does the same in
+  // some paths.
+  if (reason instanceof Error) {
+    const candidates: unknown[] = [reason];
+    if ("cause" in reason && reason.cause !== undefined) {
+      candidates.push(reason.cause);
+    }
+    for (const candidate of candidates) {
+      if (!(candidate instanceof Error)) {
+        continue;
+      }
+      if (candidate.name === "TimeoutError") {
+        return true;
+      }
+      if (candidate.name === "ClientDisconnectError") {
+        return true;
+      }
+      // Some error shapes store the underlying message where the name would
+      // normally go. Check the message against the known terminal strings too,
+      // which catches cases where an error is constructed via
+      // `new Error(timeoutErrorMessage())` and subsequently treated as the
+      // abort reason.
+      if (
+        typeof candidate.message === "string" &&
+        TERMINAL_ABORT_REASON_STRINGS.has(candidate.message)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function shouldRethrowAbort(err: unknown, signal?: AbortSignal): boolean {
+  // Terminal aborts (run timeout, client disconnect) always propagate up.
+  // The whole run is over — retrying with another model wastes resources.
+  if (isTerminalAbort(signal)) {
+    return true;
+  }
   return isFallbackAbortError(err) && !isTimeoutError(err);
 }
 
@@ -165,6 +258,7 @@ async function runFallbackCandidate<T>(params: {
   provider: string;
   model: string;
   options?: ModelFallbackRunOptions;
+  abortSignal?: AbortSignal;
 }): Promise<{ ok: true; result: T } | { ok: false; error: unknown }> {
   try {
     const result = params.options
@@ -175,13 +269,21 @@ async function runFallbackCandidate<T>(params: {
       result,
     };
   } catch (err) {
+    // Terminal aborts (run-budget exhausted, HTTP client disconnect) must always
+    // propagate regardless of whether the error also resembles a retryable failover
+    // (e.g. a Google Vertex RESOURCE_EXHAUSTED abort that races with the run-budget
+    // timer). Check this BEFORE coerceToFailoverError so the normalization path
+    // cannot mask a terminal reason. Flagged by greptile review on openclaw/openclaw#62682.
+    if (isTerminalAbort(params.abortSignal)) {
+      throw err;
+    }
     // Normalize abort-wrapped rate-limit errors (e.g. Google Vertex RESOURCE_EXHAUSTED)
     // so they become FailoverErrors and continue the fallback loop instead of aborting.
     const normalizedFailover = coerceToFailoverError(err, {
       provider: params.provider,
       model: params.model,
     });
-    if (shouldRethrowAbort(err) && !normalizedFailover) {
+    if (shouldRethrowAbort(err, params.abortSignal) && !normalizedFailover) {
       throw err;
     }
     return { ok: false, error: normalizedFailover ?? err };
@@ -194,12 +296,14 @@ async function runFallbackAttempt<T>(params: {
   model: string;
   attempts: FallbackAttempt[];
   options?: ModelFallbackRunOptions;
+  abortSignal?: AbortSignal;
 }): Promise<{ success: ModelFallbackRunResult<T> } | { error: unknown }> {
   const runResult = await runFallbackCandidate({
     run: params.run,
     provider: params.provider,
     model: params.model,
     options: params.options,
+    abortSignal: params.abortSignal,
   });
   if (runResult.ok) {
     return {
@@ -639,6 +743,13 @@ export async function runWithModelFallback<T>(params: {
   fallbacksOverride?: string[];
   run: ModelFallbackRunFn<T>;
   onError?: ModelFallbackErrorHandler;
+  /**
+   * Optional abort signal from the caller. When the signal aborts with a
+   * "terminal" reason (run-budget timeout, HTTP client disconnect — see
+   * `isTerminalAbort`), the fallback chain stops and rethrows immediately
+   * instead of trying further models. Closes openclaw/openclaw#60388.
+   */
+  abortSignal?: AbortSignal;
 }): Promise<ModelFallbackRunResult<T>> {
   const candidates = resolveFallbackCandidates({
     cfg: params.cfg,
@@ -778,6 +889,7 @@ export async function runWithModelFallback<T>(params: {
       ...candidate,
       attempts,
       options: runOptions,
+      abortSignal: params.abortSignal,
     });
     if ("success" in attemptRun) {
       if (i > 0 || attempts.length > 0 || attemptedDuringCooldown) {
@@ -912,6 +1024,8 @@ export async function runWithImageModelFallback<T>(params: {
   modelOverride?: string;
   run: (provider: string, model: string) => Promise<T>;
   onError?: ModelFallbackErrorHandler;
+  /** Optional abort signal — see runWithModelFallback's abortSignal docs. */
+  abortSignal?: AbortSignal;
 }): Promise<ModelFallbackRunResult<T>> {
   const candidates = resolveImageFallbackCandidates({
     cfg: params.cfg,
@@ -929,7 +1043,12 @@ export async function runWithImageModelFallback<T>(params: {
 
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
-    const attemptRun = await runFallbackAttempt({ run: params.run, ...candidate, attempts });
+    const attemptRun = await runFallbackAttempt({
+      run: params.run,
+      ...candidate,
+      attempts,
+      abortSignal: params.abortSignal,
+    });
     if ("success" in attemptRun) {
       return attemptRun.success;
     }
