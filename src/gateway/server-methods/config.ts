@@ -626,7 +626,7 @@ export const configHandlers: GatewayRequestHandlers = {
     const sentinelPath = await tryWriteRestartSentinelPayload(payload);
     const restart = shouldScheduleDirectConfigRestart({
       changedPaths,
-      nextConfig: validated.config,
+      nextConfig: nextRuntimeConfig,
     })
       ? scheduleGatewaySigusr1Restart({
           delayMs: restartDelayMs,
@@ -658,7 +658,7 @@ export const configHandlers: GatewayRequestHandlers = {
       },
       undefined,
     );
-    queueSharedGatewayAuthGenerationRefresh(true, validated.config, context);
+    queueSharedGatewayAuthGenerationRefresh(true, nextRuntimeConfig, context);
     queueSharedGatewayAuthDisconnect(disconnectSharedAuthClients, context);
     return;
   },
