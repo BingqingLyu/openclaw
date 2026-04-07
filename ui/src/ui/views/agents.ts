@@ -4,6 +4,7 @@ import type {
   AgentIdentityResult,
   AgentsFilesListResult,
   AgentsListResult,
+  AgentsWorkspaceListResult,
   ChannelsStatusSnapshot,
   CronJob,
   CronStatus,
@@ -19,9 +20,17 @@ import {
   renderAgentCron,
 } from "./agents-panels-status-files.ts";
 import { renderAgentTools, renderAgentSkills } from "./agents-panels-tools-skills.ts";
+import { renderWorkspacePanel } from "./agents-panels-workspace.ts";
 import { agentBadgeText, buildAgentContext, normalizeAgentLabel } from "./agents-utils.ts";
 
-export type AgentsPanel = "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+export type AgentsPanel =
+  | "overview"
+  | "files"
+  | "workspace"
+  | "tools"
+  | "skills"
+  | "channels"
+  | "cron";
 
 export type ConfigState = {
   form: Record<string, unknown> | null;
@@ -94,6 +103,13 @@ export type AgentsProps = {
   runtimeSessionKey: string;
   runtimeSessionMatchesSelectedAgent: boolean;
   modelCatalog: ModelCatalogEntry[];
+  workspaceEntries: AgentsWorkspaceListResult["entries"] | null;
+  workspacePath: string;
+  workspaceLoading: boolean;
+  workspaceError: string | null;
+  workspaceSelectedFile: string | null;
+  workspaceFileContent: string | null;
+  workspaceEditedContent: string | null;
   onRefresh: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
@@ -117,6 +133,14 @@ export type AgentsProps = {
   onAgentSkillsClear: (agentId: string) => void;
   onAgentSkillsDisableAll: (agentId: string) => void;
   onSetDefault: (agentId: string) => void;
+  onWorkspaceNavigate: (path: string) => void;
+  onWorkspaceSelectFile: (path: string) => void;
+  onWorkspaceContentChange: (content: string) => void;
+  onWorkspaceSaveFile: (content: string) => void;
+  onWorkspaceDeleteFile: (path: string) => void;
+  onWorkspaceMkdir: (name: string) => void;
+  onWorkspaceUpload: (files: FileList) => void;
+  onWorkspaceDownload: (path: string) => void;
 };
 
 export function renderAgents(props: AgentsProps) {
@@ -257,6 +281,26 @@ export function renderAgents(props: AgentsProps) {
                     onFileSave: props.onFileSave,
                   })
                 : nothing}
+              ${props.activePanel === "workspace"
+                ? renderWorkspacePanel({
+                    agentId: selectedAgent.id,
+                    entries: props.workspaceEntries,
+                    currentPath: props.workspacePath,
+                    loading: props.workspaceLoading,
+                    error: props.workspaceError,
+                    selectedFile: props.workspaceSelectedFile,
+                    fileContent: props.workspaceFileContent,
+                    editedContent: props.workspaceEditedContent,
+                    onNavigate: props.onWorkspaceNavigate,
+                    onSelectFile: props.onWorkspaceSelectFile,
+                    onContentChange: props.onWorkspaceContentChange,
+                    onSaveFile: props.onWorkspaceSaveFile,
+                    onDeleteFile: props.onWorkspaceDeleteFile,
+                    onMkdir: props.onWorkspaceMkdir,
+                    onUpload: props.onWorkspaceUpload,
+                    onDownload: props.onWorkspaceDownload,
+                  })
+                : nothing}
               ${props.activePanel === "tools"
                 ? renderAgentTools({
                     agentId: selectedAgent.id,
@@ -349,7 +393,8 @@ function renderAgentTabs(
 ) {
   const tabs: Array<{ id: AgentsPanel; label: string }> = [
     { id: "overview", label: "Overview" },
-    { id: "files", label: "Files" },
+    { id: "files", label: "Core Files" },
+    { id: "workspace", label: "Workspace Files" },
     { id: "tools", label: "Tools" },
     { id: "skills", label: "Skills" },
     { id: "channels", label: "Channels" },
