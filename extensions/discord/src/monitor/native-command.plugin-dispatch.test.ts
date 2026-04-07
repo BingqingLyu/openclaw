@@ -799,6 +799,7 @@ describe("Discord native plugin command dispatch", () => {
       guildId: "1459246755253325866",
       guildName: "Ops",
       includeChannelAccess: false,
+      agentId: "codex",
     });
     discordNativeCommandTesting.setResolveDiscordNativeInteractionRouteState(async () =>
       createConfiguredRouteState({

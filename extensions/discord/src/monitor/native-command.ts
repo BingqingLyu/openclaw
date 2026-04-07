@@ -1158,7 +1158,12 @@ async function dispatchDiscordCommandInteraction(params: {
     cfg,
     commandAuthorized,
   });
+  const nativeCommandName = command.nativeName ?? command.key;
   const isBuiltinCommand = listChatCommands().some((entry) => entry.key === command.key);
+  const canBypassSharedAuthMismatch =
+    commandAuthorized &&
+    (shouldBypassConfiguredAcpEnsure(nativeCommandName) ||
+      shouldBypassConfiguredAcpGuildGuards(nativeCommandName));
 
   const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({
     cfg,
@@ -1170,7 +1175,7 @@ async function dispatchDiscordCommandInteraction(params: {
   const blockStreamingEnabled = resolveChannelStreamingBlockEnabled(discordConfig);
 
   let didReply = false;
-  if (isBuiltinCommand && !resolvedCommandAuth.isAuthorizedSender) {
+  if (isBuiltinCommand && !resolvedCommandAuth.isAuthorizedSender && !canBypassSharedAuthMismatch) {
     log.warn(
       `discord native command auth mismatch command=${command.key} user=${sender.id} channel=${channelId} session=${commandTargetSessionKey ?? sessionKey ?? "unknown"} nativeAuthorized=${commandAuthorized} sharedAuthorized=${resolvedCommandAuth.isAuthorizedSender}`,
     );
