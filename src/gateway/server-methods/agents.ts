@@ -49,6 +49,7 @@ import {
   validateAgentsUpdateParams,
 } from "../protocol/index.js";
 import { listAgentsForGateway } from "../session-utils.js";
+import { agentsWorkspaceHandlers } from "./agents-workspace.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 
 const BOOTSTRAP_FILE_NAMES = [
@@ -964,4 +965,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       undefined,
     );
   },
+
+  // Workspace handlers
+  ...agentsWorkspaceHandlers,
 };
