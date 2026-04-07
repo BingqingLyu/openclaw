@@ -1673,6 +1673,7 @@ export function renderApp(state: AppViewState) {
                   state.workspaceSelectedFile = null;
                   state.workspaceFileContent = null;
                   state.workspaceEditedContent = null;
+                  state.workspaceError = null;
                   if (resolvedAgentId) {
                     state.workspaceLoading = true;
                     void state.client
@@ -1685,6 +1686,7 @@ export function renderApp(state: AppViewState) {
                       )
                       .then((result) => {
                         state.workspaceEntries = result?.entries ?? null;
+                        state.workspaceError = null;
                         state.workspaceLoading = false;
                       })
                       .catch((err) => {
@@ -1762,17 +1764,23 @@ export function renderApp(state: AppViewState) {
                       });
                   }
                 },
-                onWorkspaceDeleteFile: (path) => {
+                onWorkspaceDeleteFile: (deletePath) => {
                   if (resolvedAgentId) {
                     void state.client
                       ?.request<import("./types.js").AgentsWorkspaceDeleteResult>(
                         "agents.workspace.delete",
                         {
                           agentId: resolvedAgentId,
-                          path,
+                          path: deletePath,
                         },
                       )
                       .then(() => {
+                        // Clear editor if the deleted file was open
+                        if (state.workspaceSelectedFile === deletePath) {
+                          state.workspaceSelectedFile = null;
+                          state.workspaceFileContent = null;
+                          state.workspaceEditedContent = null;
+                        }
                         // Refresh file list
                         if (state.agentsPanel === "workspace") {
                           void state.client
