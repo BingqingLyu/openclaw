@@ -630,6 +630,13 @@ export async function handleFeishuMessage(params: {
       : dmTopicId
         ? buildFeishuConversationId({
             chatId: ctx.senderOpenId,
+            // Reuse "group_topic" scope: the generated ID format
+            // (senderOpenId:topic:topicId) is parsed by regex in
+            // parseFeishuConversationId, which is scope-agnostic.
+            // The chatId slot holds a user open_id (not a chat_id)
+            // here, but that is intentional — it serves as the
+            // parentPeer identifier for session routing, not as a
+            // Feishu API chat target.
             scope: "group_topic",
             topicId: dmTopicId,
           })
@@ -683,7 +690,7 @@ export async function handleFeishuMessage(params: {
             cfg: result.updatedCfg,
             channel: "feishu",
             accountId: account.accountId,
-            peer: { kind: "direct", id: ctx.senderOpenId },
+            peer: { kind: "direct", id: peerId },
           });
           log(
             `feishu[${account.accountId}]: dynamic agent created, new route: ${route.sessionKey}`,
