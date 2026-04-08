@@ -509,6 +509,9 @@ export default definePluginEntry({
             const vector = await embeddings.embed(query);
             const limitRaw = Number.parseInt(opts.limit, 10);
             const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 5;
+            if (limit !== limitRaw) {
+              console.warn(`Invalid --limit value "${opts.limit}"; using default limit of ${limit}.`);
+            }
             const results = await db.search(vector, limit, 0.3);
             // Strip vectors for output
             const output = results.map((r) => ({
