@@ -228,7 +228,7 @@ describe("provider discovery contract", () => {
       import(buildBundledPluginModuleId("minimax", "index.js")) as Promise<{
         default: Parameters<typeof registerProviders>[0];
       }>,
-      import(buildBundledPluginModuleId("modelstudio", "index.js")) as Promise<{
+      import(buildBundledPluginModuleId("qwen", "index.js")) as Promise<{
         default: Parameters<typeof registerProviders>[0];
       }>,
       import(buildBundledPluginModuleId("cloudflare-ai-gateway", "index.js")) as Promise<{
@@ -247,10 +247,7 @@ describe("provider discovery contract", () => {
       await registerProviders(minimaxPlugin),
       "minimax-portal",
     );
-    modelStudioProvider = requireProvider(
-      await registerProviders(modelStudioPlugin),
-      "modelstudio",
-    );
+    modelStudioProvider = requireProvider(await registerProviders(modelStudioPlugin), "qwen");
     cloudflareAiGatewayProvider = requireProvider(
       await registerProviders(cloudflareAiGatewayPlugin),
       "cloudflare-ai-gateway",
