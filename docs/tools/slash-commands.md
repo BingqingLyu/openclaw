@@ -131,6 +131,7 @@ Built-in commands available today:
 - `/usage off|tokens|full|cost` controls the per-response usage footer or prints a local cost summary.
 - `/tts on|off|status|provider|limit|summary|audio|help` controls TTS. See [/tools/tts](/tools/tts).
 - `/restart` restarts OpenClaw when enabled. Default: enabled; set `commands.restart: false` to disable it.
+- `/powernap` resets all sessions across all agents and restarts the gateway. Used for full session reset without LLM cost.
 - `/activation mention|always` sets group activation mode.
 - `/send on|off|inherit` sets send policy. Owner-only.
 - `/bash <command>` runs a host shell command. Text-only. Alias: `! <command>`. Requires `commands.bash: true` plus `tools.elevated` allowlists.
