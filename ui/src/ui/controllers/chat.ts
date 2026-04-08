@@ -10,10 +10,36 @@ import {
   isMissingOperatorReadScopeError,
 } from "./scope-errors.ts";
 
-const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
+const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/i;
 
 function isSilentReplyStream(text: string): boolean {
   return SILENT_REPLY_PATTERN.test(text);
+}
+
+/**
+ * Returns true when text looks like a streaming prefix fragment of NO_REPLY
+ * (e.g. "NO" or "NO_" mid-stream) so we don't persist it as visible output.
+ * Mirrors the server-side isSilentReplyPrefixText guard in auto-reply/tokens.ts.
+ */
+function isSilentReplyPrefixStream(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed) {
+    return false;
+  }
+  // Only suppress all-uppercase fragments — avoids hiding natural "No…" text.
+  if (trimmed !== trimmed.toUpperCase()) {
+    return false;
+  }
+  const normalized = trimmed.toUpperCase().trimEnd();
+  if (!normalized || /[^A-Z_]/.test(normalized)) {
+    return false;
+  }
+  const token = "NO_REPLY";
+  if (!token.startsWith(normalized)) {
+    return false;
+  }
+  // Require an underscore or the exact two-letter "NO" lead fragment.
+  return normalized.includes("_") || normalized === "NO";
 }
 /** Client-side defense-in-depth: detect assistant messages whose text is purely NO_REPLY. */
 function isAssistantSilentReply(message: unknown): boolean {
@@ -295,14 +321,14 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
 
   if (payload.state === "delta") {
     const next = extractText(payload.message);
-    if (typeof next === "string" && !isSilentReplyStream(next)) {
+    if (typeof next === "string" && !isSilentReplyStream(next) && !isSilentReplyPrefixStream(next)) {
       state.chatStream = next;
     }
   } else if (payload.state === "final") {
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
     if (finalMessage && !isAssistantSilentReply(finalMessage)) {
       state.chatMessages = [...state.chatMessages, finalMessage];
-    } else if (state.chatStream?.trim() && !isSilentReplyStream(state.chatStream)) {
+    } else if (state.chatStream?.trim() && !isSilentReplyStream(state.chatStream) && !isSilentReplyPrefixStream(state.chatStream)) {
       state.chatMessages = [
         ...state.chatMessages,
         {
@@ -321,7 +347,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       state.chatMessages = [...state.chatMessages, normalizedMessage];
     } else {
       const streamedText = state.chatStream ?? "";
-      if (streamedText.trim() && !isSilentReplyStream(streamedText)) {
+      if (streamedText.trim() && !isSilentReplyStream(streamedText) && !isSilentReplyPrefixStream(streamedText)) {
         state.chatMessages = [
           ...state.chatMessages,
           {
