@@ -1,4 +1,5 @@
 import type { ModelDefinitionConfig } from "openclaw/plugin-sdk/provider-model-shared";
+import { resolveCopilotTransportApi } from "./models.js";
 
 export const COPILOT_IDE_HEADERS: Record<string, string> = {
   "User-Agent": "GitHubCopilotChat/0.35.0",
@@ -40,11 +41,12 @@ interface CopilotModelsResponse {
   data: CopilotApiModel[];
 }
 
-function inferApiType(_model: CopilotApiModel): ModelDefinitionConfig["api"] {
-  // GitHub Copilot is an OpenAI-compatible proxy for all model families
-  // (including Claude). Built-in defaults and the catch-all resolver both
-  // use "openai-responses"; keep discovered models consistent.
-  return "openai-responses";
+function inferApiType(model: CopilotApiModel): ModelDefinitionConfig["api"] {
+  // Route Claude models through the Anthropic transport so they get
+  // Copilot-specific stream shaping (header patching, cache markers,
+  // thinking-block replay policy). Must stay in sync with
+  // resolveCopilotTransportApi in models.ts.
+  return resolveCopilotTransportApi(model.id);
 }
 
 function buildModelDefinition(model: CopilotApiModel): ModelDefinitionConfig {
