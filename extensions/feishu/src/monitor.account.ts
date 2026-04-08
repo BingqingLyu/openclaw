@@ -21,6 +21,7 @@ import {
   tryBeginFeishuMessageProcessing,
   warmupDedupFromDisk,
 } from "./dedup.js";
+import { resolveFeishuDispatchQueueKey } from "./dispatch-queue-key.js";
 import { isMentionForwardRequest } from "./mention.js";
 import { applyBotIdentityState, startBotIdentityRecovery } from "./monitor.bot-identity.js";
 import { parseFeishuDriveCommentNoticeEventPayload } from "./monitor.comment.js";
@@ -410,7 +411,7 @@ function registerEventHandlers(
     }
   };
   const dispatchFeishuMessage = async (event: FeishuMessageEvent) => {
-    const chatId = event.message.chat_id?.trim() || "unknown";
+    const queueKey = resolveFeishuDispatchQueueKey(event);
     const task = () =>
       handleFeishuMessage({
         cfg,
@@ -422,7 +423,7 @@ function registerEventHandlers(
         accountId,
         processingClaimHeld: true,
       });
-    await enqueue(chatId, task);
+    await enqueue(queueKey, task);
   };
   const resolveSenderDebounceId = (event: FeishuMessageEvent): string | undefined => {
     const senderId =

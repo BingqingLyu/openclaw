@@ -41,6 +41,7 @@ import {
 import type { ClawdbotConfig, RuntimeEnv } from "./bot-runtime-api.js";
 import { type FeishuPermissionError, resolveFeishuSenderName } from "./bot-sender-name.js";
 import { createFeishuClient } from "./client.js";
+import { buildFeishuConversationId } from "./conversation-id.js";
 import { finalizeFeishuMessageProcessing, tryRecordMessagePersistent } from "./dedup.js";
 import { maybeCreateDynamicAgent } from "./dynamic-agent.js";
 import { extractMentionTargets, isMentionForwardRequest } from "./mention.js";
@@ -617,9 +618,28 @@ export async function handleFeishuMessage(params: {
     // Using a group-scoped From causes the agent to treat different users as the same person.
     const feishuFrom = `feishu:${ctx.senderOpenId}`;
     const feishuTo = isGroup ? `chat:${ctx.chatId}` : `user:${ctx.senderOpenId}`;
-    const peerId = isGroup ? (groupSession?.peerId ?? ctx.chatId) : ctx.senderOpenId;
-    const parentPeer = isGroup ? (groupSession?.parentPeer ?? null) : null;
-    const replyInThread = isGroup ? (groupSession?.replyInThread ?? false) : false;
+    // DM topic support: when a DM message carries root_id/thread_id, scope
+    // the session to that topic so different threads get independent context.
+    // Messages sent on the main chat surface (no root_id/thread_id) keep the
+    // original flat per-sender session.
+    const dmTopicId = !isGroup
+      ? ctx.rootId?.trim() || ctx.threadId?.trim() || undefined
+      : undefined;
+    const peerId = isGroup
+      ? (groupSession?.peerId ?? ctx.chatId)
+      : dmTopicId
+        ? buildFeishuConversationId({
+            chatId: ctx.senderOpenId,
+            scope: "group_topic",
+            topicId: dmTopicId,
+          })
+        : ctx.senderOpenId;
+    const parentPeer = isGroup
+      ? (groupSession?.parentPeer ?? null)
+      : dmTopicId
+        ? { kind: "direct" as const, id: ctx.senderOpenId }
+        : null;
+    const replyInThread = isGroup ? (groupSession?.replyInThread ?? false) : Boolean(dmTopicId);
     const feishuAcpConversationSupported =
       !isGroup ||
       groupSession?.groupSessionScope === "group_topic" ||
@@ -808,9 +828,10 @@ export async function handleFeishuMessage(params: {
     }
 
     const isTopicSessionForThread =
-      isGroup &&
-      (groupSession?.groupSessionScope === "group_topic" ||
-        groupSession?.groupSessionScope === "group_topic_sender");
+      (isGroup &&
+        (groupSession?.groupSessionScope === "group_topic" ||
+          groupSession?.groupSessionScope === "group_topic_sender")) ||
+      Boolean(dmTopicId);
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
     const messageBody = buildFeishuAgentBody({
@@ -1075,15 +1096,17 @@ export async function handleFeishuMessage(params: {
     //   triggering message itself. Using rootId here would silently push the
     //   reply into a topic thread invisible in the main chat view (#32980).
     const isTopicSession =
-      isGroup &&
-      (groupSession?.groupSessionScope === "group_topic" ||
-        groupSession?.groupSessionScope === "group_topic_sender");
+      (isGroup &&
+        (groupSession?.groupSessionScope === "group_topic" ||
+          groupSession?.groupSessionScope === "group_topic_sender")) ||
+      Boolean(dmTopicId);
     const configReplyInThread =
-      isGroup &&
-      (groupConfig?.replyInThread ?? feishuCfg?.replyInThread ?? "disabled") === "enabled";
+      (isGroup &&
+        (groupConfig?.replyInThread ?? feishuCfg?.replyInThread ?? "disabled") === "enabled") ||
+      Boolean(dmTopicId);
     const replyTargetMessageId =
       isTopicSession || configReplyInThread ? (ctx.rootId ?? ctx.messageId) : ctx.messageId;
-    const threadReply = isGroup ? (groupSession?.threadReply ?? false) : false;
+    const threadReply = isGroup ? (groupSession?.threadReply ?? false) : Boolean(dmTopicId);
 
     if (broadcastAgents) {
       // Cross-account dedup: in multi-account setups, Feishu delivers the same
@@ -1142,7 +1165,7 @@ export async function handleFeishuMessage(params: {
             chatId: ctx.chatId,
             allowReasoningPreview,
             replyToMessageId: replyTargetMessageId,
-            skipReplyToInMessages: !isGroup,
+            skipReplyToInMessages: !isGroup && !replyInThread,
             replyInThread,
             rootId: ctx.rootId,
             threadReply,
@@ -1251,7 +1274,7 @@ export async function handleFeishuMessage(params: {
         chatId: ctx.chatId,
         allowReasoningPreview,
         replyToMessageId: replyTargetMessageId,
-        skipReplyToInMessages: !isGroup,
+        skipReplyToInMessages: !isGroup && !replyInThread,
         replyInThread,
         rootId: ctx.rootId,
         threadReply,
