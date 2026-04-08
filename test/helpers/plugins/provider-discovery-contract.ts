@@ -218,23 +218,23 @@ function installDiscoveryHooks(state: DiscoveryState) {
       }>(bundledProviderModules.cloudflareAiGatewayIndexModuleUrl),
     ]);
     state.githubCopilotProvider = requireProvider(
-      registerProviders(githubCopilotPlugin),
+      await registerProviders(githubCopilotPlugin),
       "github-copilot",
     );
-    state.ollamaProvider = requireProvider(registerProviders(ollamaPlugin), "ollama");
-    state.vllmProvider = requireProvider(registerProviders(vllmPlugin), "vllm");
-    state.sglangProvider = requireProvider(registerProviders(sglangPlugin), "sglang");
-    state.minimaxProvider = requireProvider(registerProviders(minimaxPlugin), "minimax");
+    state.ollamaProvider = requireProvider(await registerProviders(ollamaPlugin), "ollama");
+    state.vllmProvider = requireProvider(await registerProviders(vllmPlugin), "vllm");
+    state.sglangProvider = requireProvider(await registerProviders(sglangPlugin), "sglang");
+    state.minimaxProvider = requireProvider(await registerProviders(minimaxPlugin), "minimax");
     state.minimaxPortalProvider = requireProvider(
-      registerProviders(minimaxPlugin),
+      await registerProviders(minimaxPlugin),
       "minimax-portal",
     );
     state.modelStudioProvider = requireProvider(
-      registerProviders(modelStudioPlugin),
+      await registerProviders(modelStudioPlugin),
       "modelstudio",
     );
     state.cloudflareAiGatewayProvider = requireProvider(
-      registerProviders(cloudflareAiGatewayPlugin),
+      await registerProviders(cloudflareAiGatewayPlugin),
       "cloudflare-ai-gateway",
     );
     setRuntimeAuthStore();

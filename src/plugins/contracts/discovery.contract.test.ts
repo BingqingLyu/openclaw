@@ -224,17 +224,23 @@ describe("provider discovery contract", () => {
       }>,
     ]);
     githubCopilotProvider = requireProvider(
-      registerProviders(githubCopilotPlugin),
+      await registerProviders(githubCopilotPlugin),
       "github-copilot",
     );
-    ollamaProvider = requireProvider(registerProviders(ollamaPlugin), "ollama");
-    vllmProvider = requireProvider(registerProviders(vllmPlugin), "vllm");
-    sglangProvider = requireProvider(registerProviders(sglangPlugin), "sglang");
-    minimaxProvider = requireProvider(registerProviders(minimaxPlugin), "minimax");
-    minimaxPortalProvider = requireProvider(registerProviders(minimaxPlugin), "minimax-portal");
-    modelStudioProvider = requireProvider(registerProviders(modelStudioPlugin), "modelstudio");
+    ollamaProvider = requireProvider(await registerProviders(ollamaPlugin), "ollama");
+    vllmProvider = requireProvider(await registerProviders(vllmPlugin), "vllm");
+    sglangProvider = requireProvider(await registerProviders(sglangPlugin), "sglang");
+    minimaxProvider = requireProvider(await registerProviders(minimaxPlugin), "minimax");
+    minimaxPortalProvider = requireProvider(
+      await registerProviders(minimaxPlugin),
+      "minimax-portal",
+    );
+    modelStudioProvider = requireProvider(
+      await registerProviders(modelStudioPlugin),
+      "modelstudio",
+    );
     cloudflareAiGatewayProvider = requireProvider(
-      registerProviders(cloudflareAiGatewayPlugin),
+      await registerProviders(cloudflareAiGatewayPlugin),
       "cloudflare-ai-gateway",
     );
     setRuntimeAuthStore();

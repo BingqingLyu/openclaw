@@ -3,11 +3,25 @@ import { createTestPluginApi } from "../../test/helpers/plugins/plugin-api.js";
 
 const resolveCopilotApiTokenMock = vi.hoisted(() => vi.fn());
 
-vi.mock("./register.runtime.js", () => ({
+vi.mock("./token.js", () => ({
   DEFAULT_COPILOT_API_BASE_URL: "https://api.githubcopilot.test",
   resolveCopilotApiToken: resolveCopilotApiTokenMock,
-  githubCopilotLoginCommand: vi.fn(),
+}));
+
+vi.mock("./discovery.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./discovery.js")>();
+  return {
+    ...actual,
+    discoverCopilotModels: vi.fn().mockResolvedValue([]),
+  };
+});
+
+vi.mock("./usage.js", () => ({
   fetchCopilotUsage: vi.fn(),
+}));
+
+vi.mock("openclaw/plugin-sdk/provider-auth-login", () => ({
+  githubCopilotLoginCommand: vi.fn(),
 }));
 
 import plugin from "./index.js";
