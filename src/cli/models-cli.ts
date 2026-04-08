@@ -74,6 +74,7 @@ export function registerModelsCli(program: Command) {
       false,
     )
     .option("--probe", "Probe configured provider auth (live)", false)
+    .option("--all", "Probe every configured model, not just one per provider", false)
     .option("--probe-provider <name>", "Only probe a single provider")
     .option(
       "--probe-profile <id>",
@@ -101,6 +102,7 @@ export function registerModelsCli(program: Command) {
             plain: Boolean(opts.plain),
             check: Boolean(opts.check),
             probe: Boolean(opts.probe),
+            probeAll: Boolean(opts.all),
             probeProvider: opts.probeProvider as string | undefined,
             probeProfile: opts.probeProfile as string | string[] | undefined,
             probeTimeout: opts.probeTimeout as string | undefined,

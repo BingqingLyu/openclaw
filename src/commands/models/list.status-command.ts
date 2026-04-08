@@ -68,6 +68,7 @@ export async function modelsStatusCommand(
     plain?: boolean;
     check?: boolean;
     probe?: boolean;
+    probeAll?: boolean;
     probeProvider?: string;
     probeProfile?: string | string[];
     probeTimeout?: string;
@@ -240,6 +241,7 @@ export async function modelsStatusCommand(
             timeoutMs: probeTimeoutMs,
             concurrency: probeConcurrency,
             maxTokens: probeMaxTokens,
+            probeAll: Boolean(opts.probeAll),
           },
           onProgress: update,
         });
