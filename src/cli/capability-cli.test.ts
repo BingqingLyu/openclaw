@@ -330,6 +330,13 @@ describe("capability cli", () => {
     });
 
     expect(mocks.agentCommand).toHaveBeenCalledTimes(1);
+    expect(mocks.agentCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: expect.stringMatching(/^agent:main:infer:model-run:/),
+      }),
+      expect.any(Object),
+      expect.any(Object),
+    );
     expect(mocks.callGateway).not.toHaveBeenCalled();
     expect(mocks.runtime.writeJson).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -360,12 +367,47 @@ describe("capability cli", () => {
     });
 
     expect(mocks.describeImageFile).toHaveBeenCalledWith(
-      expect.objectContaining({ filePath: expect.stringMatching(/photo\.jpg$/) }),
+      expect.objectContaining({
+        filePath: expect.stringMatching(/photo\.jpg$/),
+        agentDir: "/tmp/agent",
+      }),
     );
     expect(mocks.runtime.writeJson).toHaveBeenCalledWith(
       expect.objectContaining({
         capability: "image.describe",
         outputs: [expect.objectContaining({ kind: "image.description" })],
+      }),
+    );
+  });
+
+  it("passes prompt overrides into image describe runtime config", async () => {
+    await runRegisteredCli({
+      register: registerCapabilityCli as (program: Command) => void,
+      argv: [
+        "capability",
+        "image",
+        "describe",
+        "--file",
+        "photo.jpg",
+        "--prompt",
+        "Describe this image in one sentence.",
+        "--json",
+      ],
+    });
+
+    expect(mocks.describeImageFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentDir: "/tmp/agent",
+        cfg: expect.objectContaining({
+          tools: {
+            media: {
+              image: expect.objectContaining({
+                prompt: "Describe this image in one sentence.",
+                _requestPromptOverride: "Describe this image in one sentence.",
+              }),
+            },
+          },
+        }),
       }),
     );
   });

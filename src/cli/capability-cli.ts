@@ -15,7 +15,7 @@ import { updateAuthProfileStoreWithLock } from "../agents/auth-profiles/store.js
 import { resolveMemorySearchConfig } from "../agents/memory-search.js";
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import { modelsAuthLoginCommand, modelsStatusCommand } from "../commands/models.js";
-import { loadConfig } from "../config/config.js";
+import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import { callGateway, randomIdempotencyKey } from "../gateway/call.js";
 import { buildGatewayConnectionDetailsWithResolvers } from "../gateway/connection-details.js";
@@ -524,6 +524,7 @@ async function runModelRun(params: {
       {
         message: params.prompt,
         agentId,
+        sessionKey: `agent:${agentId}:infer:model-run:${randomIdempotencyKey()}`,
         model: params.model,
         json: false,
       },
@@ -745,14 +746,33 @@ async function runImageDescribe(params: {
   capability: "image.describe" | "image.describe-many";
   files: string[];
   model?: string;
+  prompt?: string;
 }) {
-  const cfg = loadConfig();
+  const cfgBase = loadConfig();
+  const agentDir = resolveAgentDir(cfgBase, resolveDefaultAgentId(cfgBase));
+  const cfg = params.prompt?.trim()
+    ? ({
+        ...cfgBase,
+        tools: {
+          ...cfgBase.tools,
+          media: {
+            ...cfgBase.tools?.media,
+            image: {
+              ...cfgBase.tools?.media?.image,
+              _requestPromptOverride: params.prompt.trim(),
+              prompt: params.prompt.trim(),
+            },
+          },
+        },
+      } satisfies OpenClawConfig)
+    : cfgBase;
   const activeModel = requireProviderModelOverride(params.model);
   const outputs = await Promise.all(
     params.files.map(async (filePath) => {
       const result = await describeImageFile({
         filePath: path.resolve(filePath),
         cfg,
+        agentDir,
         activeModel,
       });
       if (!result.text) {
@@ -1362,6 +1382,7 @@ export function registerCapabilityCli(program: Command) {
     .command("describe")
     .description("Describe one image file")
     .requiredOption("--file <path>", "Image file")
+    .option("--prompt <text>", "Prompt override")
     .option("--model <provider/model>", "Model override")
     .option("--json", "Output JSON", false)
     .action(async (opts) => {
@@ -1369,6 +1390,7 @@ export function registerCapabilityCli(program: Command) {
         const result = await runImageDescribe({
           capability: "image.describe",
           files: [String(opts.file)],
+          prompt: opts.prompt as string | undefined,
           model: opts.model as string | undefined,
         });
         emitJsonOrText(defaultRuntime, Boolean(opts.json), result, formatEnvelopeForText);
@@ -1379,6 +1401,7 @@ export function registerCapabilityCli(program: Command) {
     .command("describe-many")
     .description("Describe multiple image files")
     .requiredOption("--file <path>", "Image file", collectOption, [])
+    .option("--prompt <text>", "Prompt override")
     .option("--model <provider/model>", "Model override")
     .option("--json", "Output JSON", false)
     .action(async (opts) => {
@@ -1386,6 +1409,7 @@ export function registerCapabilityCli(program: Command) {
         const result = await runImageDescribe({
           capability: "image.describe-many",
           files: opts.file as string[],
+          prompt: opts.prompt as string | undefined,
           model: opts.model as string | undefined,
         });
         emitJsonOrText(defaultRuntime, Boolean(opts.json), result, formatEnvelopeForText);

@@ -332,9 +332,20 @@ export async function runWebSearch(
         sawUnavailableProvider = true;
         continue;
       }
+      const executed = await definition.execute(params.args);
+      if (
+        allowFallback &&
+        executed &&
+        typeof executed === "object" &&
+        "error" in executed &&
+        typeof executed.error === "string"
+      ) {
+        lastError = new Error(`web_search provider "${candidate.id}" returned ${executed.error}`);
+        continue;
+      }
       return {
         provider: candidate.id,
-        result: await definition.execute(params.args),
+        result: executed,
       };
     } catch (error) {
       lastError = error;

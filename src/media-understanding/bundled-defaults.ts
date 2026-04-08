@@ -14,6 +14,7 @@ const BUNDLED_MEDIA_PROVIDER_DEFAULTS: Record<string, BundledMediaProviderDefaul
   },
   "openai-codex": {
     defaultModels: { image: "gpt-5.4" },
+    autoPriority: { image: 20 },
   },
   anthropic: {
     defaultModels: { image: "claude-opus-4-6" },
