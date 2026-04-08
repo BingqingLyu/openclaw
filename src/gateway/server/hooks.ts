@@ -18,14 +18,6 @@ import { createHooksRequestHandler, type HookClientIpConfig } from "../server-ht
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
-function normalizeOptionalString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 /**
  * Determines whether a shared hook result should be surfaced as a system
  * event in the main session.  This replaces the previous `!result.delivered`
