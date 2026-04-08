@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { statSync } from "node:fs";
 import {
   materializeWindowsSpawnProgram,
   resolveWindowsSpawnProgram,
@@ -51,6 +52,12 @@ export async function checkQmdBinaryAvailability(params: {
     return { available: false, error: formatQmdAvailabilityError(err) };
   }
 
+  const cwd = params.cwd ?? process.cwd();
+  const cwdError = validateQmdProbeCwd(cwd);
+  if (cwdError) {
+    return { available: false, error: cwdError };
+  }
+
   return await new Promise((resolve) => {
     let settled = false;
     let didSpawn = false;
@@ -67,7 +74,7 @@ export async function checkQmdBinaryAvailability(params: {
 
     const child = spawn(spawnInvocation.command, spawnInvocation.argv, {
       env: params.env,
-      cwd: params.cwd ?? process.cwd(),
+      cwd,
       shell: spawnInvocation.shell,
       windowsHide: spawnInvocation.windowsHide,
       stdio: "ignore",
@@ -95,6 +102,21 @@ export async function checkQmdBinaryAvailability(params: {
       finish({ available: true });
     });
   });
+}
+
+function validateQmdProbeCwd(cwd: string): string | null {
+  try {
+    const stat = statSync(cwd);
+    if (!stat.isDirectory()) {
+      return `workspace directory is not a directory: ${cwd}`;
+    }
+    return null;
+  } catch (err) {
+    if (typeof err === "object" && err && "code" in err && err.code === "ENOENT") {
+      return `workspace directory missing: ${cwd}`;
+    }
+    return `workspace directory unavailable: ${cwd} (${formatQmdAvailabilityError(err)})`;
+  }
 }
 
 export async function runCliCommand(params: {
