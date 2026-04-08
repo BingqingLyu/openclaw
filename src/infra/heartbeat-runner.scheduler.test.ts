@@ -313,10 +313,16 @@ describe("startHeartbeatRunner", () => {
     const runSpy = vi.fn().mockResolvedValue({ status: "ran", durationMs: 1 });
     const runner = startDefaultRunner(runSpy);
 
-    // Jump well past the 30m interval (simulates App Nap / process suspension).
-    await vi.advanceTimersByTimeAsync(90 * 60_000);
+    // Advance the clock past the 30m interval WITHOUT firing timers,
+    // simulating App Nap / process suspension where the event loop was frozen.
+    vi.advanceTimersByTime(90 * 60_000);
 
-    // The runner should have fired — the overdue detection triggers immediately.
+    // Trigger scheduleNext() via updateConfig — it will see nextDueMs is in the past
+    // and hit the delay === 0 overdue branch.
+    runner.updateConfig(heartbeatConfig());
+    await vi.advanceTimersByTimeAsync(1);
+
+    // The overdue detection should have fired a heartbeat immediately.
     expect(runSpy).toHaveBeenCalled();
 
     runner.stop();

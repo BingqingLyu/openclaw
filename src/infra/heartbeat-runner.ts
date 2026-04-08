@@ -1117,10 +1117,16 @@ export function startHeartbeatRunner(opts: {
     const delay = Math.max(0, nextDue - now);
     if (delay === 0) {
       // Already overdue — fire immediately (e.g. App Nap recovery, process suspension).
+      // Wrap in setTimeout(0) so state.timer is set, preserving the re-entrant guard
+      // against concurrent scheduleNext() calls (e.g. from updateConfig during a run).
       log.info("heartbeat: overdue interval detected, firing immediately", {
         overdueBy: now - nextDue,
       });
-      requestHeartbeatNow({ reason: "interval", coalesceMs: 0 });
+      state.timer = setTimeout(() => {
+        state.timer = null;
+        requestHeartbeatNow({ reason: "interval", coalesceMs: 0 });
+      }, 0);
+      state.timer.unref?.();
       return;
     }
     state.timer = setTimeout(() => {
