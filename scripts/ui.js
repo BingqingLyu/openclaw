@@ -76,23 +76,24 @@ export function assertSafeWindowsShellArgs(args, platform = process.platform) {
   );
 }
 
-function createSpawnOptions(cmd, args, envOverride) {
+function resolveSpawnCall(cmd, args, envOverride) {
   const useShell = shouldUseShellForCommand(cmd);
   if (useShell) {
     assertSafeWindowsShellArgs(args);
+    // Node.js v24 DEP0190: passing args array with shell:true triggers a deprecation
+    // warning because args are concatenated without shell-escaping. Fold args into
+    // the command string instead — assertSafeWindowsShellArgs already validated them.
+    const file = args.length > 0 ? `${cmd} ${args.join(" ")}` : cmd;
+    return { file, args: [], options: { cwd: uiDir, stdio: "inherit", env: envOverride ?? process.env, shell: true } };
   }
-  return {
-    cwd: uiDir,
-    stdio: "inherit",
-    env: envOverride ?? process.env,
-    ...(useShell ? { shell: true } : {}),
-  };
+  return { file: cmd, args, options: { cwd: uiDir, stdio: "inherit", env: envOverride ?? process.env } };
 }
 
 function run(cmd, args) {
+  const { file, args: spawnArgs, options } = resolveSpawnCall(cmd, args);
   let child;
   try {
-    child = spawn(cmd, args, createSpawnOptions(cmd, args));
+    child = spawn(file, spawnArgs, options);
   } catch (err) {
     console.error(`Failed to launch ${cmd}:`, err);
     process.exit(1);
@@ -111,9 +112,10 @@ function run(cmd, args) {
 }
 
 function runSync(cmd, args, envOverride) {
+  const { file, args: spawnArgs, options } = resolveSpawnCall(cmd, args, envOverride);
   let result;
   try {
-    result = spawnSync(cmd, args, createSpawnOptions(cmd, args, envOverride));
+    result = spawnSync(file, spawnArgs, options);
   } catch (err) {
     console.error(`Failed to launch ${cmd}:`, err);
     process.exit(1);
