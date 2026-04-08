@@ -1827,6 +1827,8 @@ export function renderApp(state: AppViewState) {
                 },
                 onWorkspaceDeleteFile: (deletePath) => {
                   if (resolvedAgentId) {
+                    const deleteAgentId = resolvedAgentId;
+                    const deleteListPath = state.workspacePath;
                     void state.client
                       ?.request<import("./types.js").AgentsWorkspaceDeleteResult>(
                         "agents.workspace.delete",
@@ -1842,17 +1844,27 @@ export function renderApp(state: AppViewState) {
                           state.workspaceFileContent = null;
                           state.workspaceEditedContent = null;
                         }
-                        // Refresh file list
-                        if (state.agentsPanel === "workspace") {
+                        // Refresh file list only if still on the same agent/path
+                        if (
+                          state.agentsPanel === "workspace" &&
+                          state.agentsSelectedId === deleteAgentId &&
+                          state.workspacePath === deleteListPath
+                        ) {
                           void state.client
                             ?.request<import("./types.js").AgentsWorkspaceListResult>(
                               "agents.workspace.list",
                               {
-                                agentId: resolvedAgentId,
-                                path: state.workspacePath,
+                                agentId: deleteAgentId,
+                                path: deleteListPath,
                               },
                             )
                             .then((result) => {
+                              if (
+                                state.agentsSelectedId !== deleteAgentId ||
+                                state.workspacePath !== deleteListPath
+                              ) {
+                                return;
+                              }
                               state.workspaceEntries = result?.entries ?? null;
                             });
                         }
@@ -1905,12 +1917,14 @@ export function renderApp(state: AppViewState) {
                         : file.name;
                       // Use base64 encoding to preserve binary data for all file types
                       const buffer = await file.arrayBuffer();
-                      const base64 = btoa(
-                        new Uint8Array(buffer).reduce(
-                          (data, byte) => data + String.fromCharCode(byte),
-                          "",
-                        ),
-                      );
+                      const bytes = new Uint8Array(buffer);
+                      // Chunked encoding to avoid quadratic string concatenation
+                      const chunkSize = 8192;
+                      let binaryStr = "";
+                      for (let i = 0; i < bytes.length; i += chunkSize) {
+                        binaryStr += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+                      }
+                      const base64 = btoa(binaryStr);
                       await state.client?.request<import("./types.js").AgentsWorkspaceSetResult>(
                         "agents.workspace.set",
                         {
