@@ -4,6 +4,7 @@ import type { ModelDefinitionConfig } from "../../config/types.models.js";
 import { registerProviders, requireProvider } from "./testkit.js";
 
 const resolveCopilotApiTokenMock = vi.hoisted(() => vi.fn());
+const discoverCopilotModelsMock = vi.hoisted(() => vi.fn());
 const buildOllamaProviderMock = vi.hoisted(() => vi.fn());
 const buildVllmProviderMock = vi.hoisted(() => vi.fn());
 const buildSglangProviderMock = vi.hoisted(() => vi.fn());
@@ -163,11 +164,19 @@ describe("provider discovery contract", () => {
         listProfilesForProvider: listProfilesForProviderMock,
       };
     });
+    const githubCopilotDiscoveryModuleId = buildBundledPluginModuleId("github-copilot", "discovery.js");
     vi.doMock(githubCopilotTokenModuleId, async () => {
       const actual = await vi.importActual<object>(githubCopilotTokenModuleId);
       return {
         ...actual,
         resolveCopilotApiToken: resolveCopilotApiTokenMock,
+      };
+    });
+    vi.doMock(githubCopilotDiscoveryModuleId, async () => {
+      const actual = await vi.importActual<object>(githubCopilotDiscoveryModuleId);
+      return {
+        ...actual,
+        discoverCopilotModels: discoverCopilotModelsMock,
       };
     });
     vi.doMock(ollamaApiModuleId, async () => {
@@ -244,11 +253,13 @@ describe("provider discovery contract", () => {
       "cloudflare-ai-gateway",
     );
     setRuntimeAuthStore();
+    discoverCopilotModelsMock.mockResolvedValue([]);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     resolveCopilotApiTokenMock.mockReset();
+    discoverCopilotModelsMock.mockReset();
     buildOllamaProviderMock.mockReset();
     buildVllmProviderMock.mockReset();
     buildSglangProviderMock.mockReset();

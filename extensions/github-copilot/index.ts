@@ -175,12 +175,22 @@ export default definePluginEntry({
               ? Object.keys(explicitModels).length > 0
               : false;
 
+          // Use the user-configured baseUrl for discovery when present (e.g.
+          // enterprise proxies) so that discovered models match the endpoint
+          // they will actually run against.
+          const configuredBaseUrl =
+            ctx.config?.models?.providers?.["github-copilot"]?.baseUrl;
+          const discoveryBaseUrl =
+            typeof configuredBaseUrl === "string" && configuredBaseUrl
+              ? configuredBaseUrl
+              : baseUrl;
+
           let discoveredModels: ModelDefinitionConfig[] = [];
           if (copilotToken && !hasExplicitModels) {
             try {
               const knownModelIds = new Set(getDefaultCopilotModelIds());
               discoveredModels = await discoverCopilotModels({
-                baseUrl,
+                baseUrl: discoveryBaseUrl,
                 copilotToken,
                 knownModelIds,
               });
