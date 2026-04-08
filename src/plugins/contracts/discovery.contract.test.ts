@@ -164,7 +164,10 @@ describe("provider discovery contract", () => {
         listProfilesForProvider: listProfilesForProviderMock,
       };
     });
-    const githubCopilotDiscoveryModuleId = buildBundledPluginModuleId("github-copilot", "discovery.js");
+    const githubCopilotDiscoveryModuleId = buildBundledPluginModuleId(
+      "github-copilot",
+      "discovery.js",
+    );
     vi.doMock(githubCopilotTokenModuleId, async () => {
       const actual = await vi.importActual<object>(githubCopilotTokenModuleId);
       return {

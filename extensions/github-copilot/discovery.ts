@@ -111,5 +111,6 @@ export async function discoverCopilotModels(params: {
       }
       return true;
     })
+    .toSorted((a, b) => a.id.localeCompare(b.id))
     .map(buildModelDefinition);
 }

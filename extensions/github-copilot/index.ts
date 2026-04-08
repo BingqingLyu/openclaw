@@ -178,8 +178,7 @@ export default definePluginEntry({
           // Use the user-configured baseUrl for discovery when present (e.g.
           // enterprise proxies) so that discovered models match the endpoint
           // they will actually run against.
-          const configuredBaseUrl =
-            ctx.config?.models?.providers?.["github-copilot"]?.baseUrl;
+          const configuredBaseUrl = ctx.config?.models?.providers?.["github-copilot"]?.baseUrl;
           const discoveryBaseUrl =
             typeof configuredBaseUrl === "string" && configuredBaseUrl
               ? configuredBaseUrl
