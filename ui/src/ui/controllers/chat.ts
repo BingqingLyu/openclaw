@@ -30,8 +30,8 @@ function isSilentReplyPrefixStream(text: string): boolean {
   if (trimmed !== trimmed.toUpperCase()) {
     return false;
   }
-  const normalized = trimmed.toUpperCase().trimEnd();
-  if (!normalized || /[^A-Z_]/.test(normalized)) {
+  const normalized = trimmed.toUpperCase();
+  if (!normalized || normalized.length < 2 || /[^A-Z_]/.test(normalized)) {
     return false;
   }
   const token = "NO_REPLY";
