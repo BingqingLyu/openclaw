@@ -1773,6 +1773,9 @@ export function renderApp(state: AppViewState) {
                 },
                 onWorkspaceSaveFile: (content) => {
                   if (resolvedAgentId && state.workspaceSelectedFile) {
+                    const savedFile = state.workspaceSelectedFile;
+                    const savedAgentId = resolvedAgentId;
+                    const savedPath = state.workspacePath;
                     void state.client
                       ?.request<import("./types.js").AgentsWorkspaceSetResult>(
                         "agents.workspace.set",
@@ -1784,20 +1787,35 @@ export function renderApp(state: AppViewState) {
                         },
                       )
                       .then(() => {
-                        // Update original content to match saved content
-                        state.workspaceFileContent = content;
-                        state.workspaceEditedContent = null;
-                        // Refresh file list
-                        if (state.agentsPanel === "workspace") {
+                        // Ignore stale save responses if file or agent changed
+                        if (
+                          state.workspaceSelectedFile === savedFile &&
+                          state.agentsSelectedId === savedAgentId
+                        ) {
+                          state.workspaceFileContent = content;
+                          state.workspaceEditedContent = null;
+                        }
+                        // Refresh file list only if still on the same agent/path
+                        if (
+                          state.agentsPanel === "workspace" &&
+                          state.agentsSelectedId === savedAgentId &&
+                          state.workspacePath === savedPath
+                        ) {
                           void state.client
                             ?.request<import("./types.js").AgentsWorkspaceListResult>(
                               "agents.workspace.list",
                               {
-                                agentId: resolvedAgentId,
-                                path: state.workspacePath,
+                                agentId: savedAgentId,
+                                path: savedPath,
                               },
                             )
                             .then((result) => {
+                              if (
+                                state.agentsSelectedId !== savedAgentId ||
+                                state.workspacePath !== savedPath
+                              ) {
+                                return;
+                              }
                               state.workspaceEntries = result?.entries ?? null;
                             });
                         }
