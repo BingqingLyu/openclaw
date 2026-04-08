@@ -1676,6 +1676,7 @@ export function renderApp(state: AppViewState) {
                   state.workspaceError = null;
                   if (resolvedAgentId) {
                     state.workspaceLoading = true;
+                    const requestedPath = path;
                     void state.client
                       ?.request<import("./types.js").AgentsWorkspaceListResult>(
                         "agents.workspace.list",
@@ -1685,11 +1686,18 @@ export function renderApp(state: AppViewState) {
                         },
                       )
                       .then((result) => {
+                        // Ignore stale responses if user already navigated elsewhere
+                        if (state.workspacePath !== requestedPath) {
+                          return;
+                        }
                         state.workspaceEntries = result?.entries ?? null;
                         state.workspaceError = null;
                         state.workspaceLoading = false;
                       })
                       .catch((err) => {
+                        if (state.workspacePath !== requestedPath) {
+                          return;
+                        }
                         state.workspaceError = String(err);
                         state.workspaceLoading = false;
                       });
