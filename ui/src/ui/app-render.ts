@@ -735,6 +735,27 @@ export function renderApp(state: AppViewState) {
       case "tools":
         void loadToolsCatalog(state, agentId);
         return void refreshVisibleToolsEffectiveForCurrentSession(state);
+      case "workspace": {
+        state.workspaceLoading = true;
+        const requestedAgentId = agentId;
+        void state.client
+          ?.request<import("./types.js").AgentsWorkspaceListResult>(
+            "agents.workspace.list",
+            { agentId, path: "" },
+          )
+          .then((result) => {
+            if (state.agentsSelectedId !== requestedAgentId) return;
+            state.workspaceEntries = result?.entries ?? null;
+            state.workspacePath = result?.path ?? "";
+            state.workspaceLoading = false;
+          })
+          .catch((err) => {
+            if (state.agentsSelectedId !== requestedAgentId) return;
+            state.workspaceError = String(err);
+            state.workspaceLoading = false;
+          });
+        return;
+      }
     }
   };
   const refreshAgentsPanelSupplementalData = (panel: AppViewState["agentsPanel"]) => {
@@ -764,6 +785,13 @@ export function renderApp(state: AppViewState) {
     state.toolsCatalogError = null;
     state.toolsCatalogLoading = false;
     resetToolsEffectiveState(state);
+    // Always clear workspace state on agent switch
+    state.workspaceSelectedFile = null;
+    state.workspaceFileContent = null;
+    state.workspaceEditedContent = null;
+    state.workspaceError = null;
+    state.workspacePath = "";
+    state.workspaceEntries = null;
   };
 
   return html`
