@@ -685,12 +685,15 @@ export async function handleFeishuMessage(params: {
         });
         if (result.created) {
           effectiveCfg = result.updatedCfg;
-          // Re-resolve route with updated config
+          // Re-resolve route with updated config, preserving parentPeer
+          // so topic-scoped peers inherit the flat-sender binding via
+          // thread parent inheritance.
           route = core.channel.routing.resolveAgentRoute({
             cfg: result.updatedCfg,
             channel: "feishu",
             accountId: account.accountId,
             peer: { kind: "direct", id: peerId },
+            parentPeer,
           });
           log(
             `feishu[${account.accountId}]: dynamic agent created, new route: ${route.sessionKey}`,
