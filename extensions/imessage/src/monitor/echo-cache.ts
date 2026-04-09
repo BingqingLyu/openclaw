@@ -27,7 +27,7 @@ function normalizeEchoTextKey(text: string | undefined): string | null {
   if (!text) {
     return null;
   }
-  const normalized = text.replace(/\r\n?/g, "\n").trim();
+  const normalized = text.replace(/\0/g, "").replace(/\r\n?/g, "\n").trim();
   return normalized ? normalized : null;
 }
 

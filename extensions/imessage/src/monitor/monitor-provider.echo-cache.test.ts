@@ -17,6 +17,18 @@ describe("iMessage sent-message echo cache", () => {
     expect(cache.has("acct:imessage:+1666", { text: "Reasoning:\n_step_" })).toBe(false);
   });
 
+  it("matches echo text that has a NUL prefix", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-02-25T00:00:00Z"));
+    const cache = createSentMessageCache();
+
+    cache.remember("acct:imessage:+1555", { text: "hello world" });
+
+    // iMessage can prefix echoed outbound text with NUL bytes in chat.db
+    expect(cache.has("acct:imessage:+1555", { text: "\0hello world" })).toBe(true);
+    expect(cache.has("acct:imessage:+1555", { text: "\0\0hello world" })).toBe(true);
+  });
+
   it("matches by outbound message id and ignores placeholder ids", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-02-25T00:00:00Z"));
