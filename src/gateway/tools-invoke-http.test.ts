@@ -193,6 +193,16 @@ vi.mock("../agents/openclaw-tools.js", () => {
 
 vi.mock("../agents/pi-tools.js", () => ({
   resolveToolLoopDetectionConfig: hookMocks.resolveToolLoopDetectionConfig,
+  // createOpenClawCodingTools is called by resolveGatewayScopedTools to include
+  // exec/edit/read/browser in the /tools/invoke surface. Returns a stub coding
+  // tool so the merge + dedup + policy path can be exercised without real fs ops.
+  createOpenClawCodingTools: () => [
+    {
+      name: "coding_tool_stub",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({ ok: true, result: "coding" }),
+    },
+  ],
 }));
 
 vi.mock("../agents/pi-tools.before-tool-call.js", () => ({
@@ -869,5 +879,21 @@ describe("POST /tools/invoke", () => {
     expect(patchRes.status).toBe(404);
     expect(nodesRes.status).toBe(404);
     expect(nodesAdminRes.status).toBe(404);
+  });
+
+  it("exposes coding tools via /tools/invoke when agent policy allows them", async () => {
+    // coding_tool_stub is returned by the createOpenClawCodingTools mock above.
+    // It's not on the HTTP deny list, so it's available when the agent policy
+    // includes it. This verifies that coding tools are merged into the
+    // gateway tool surface and pass through policy + deny-list filtering.
+    setMainAllowedTools({ allow: ["coding_tool_stub"] });
+
+    const res = await invokeToolAuthed({
+      tool: "coding_tool_stub",
+      sessionKey: "main",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true, result: { ok: true, result: "coding" } });
   });
 });

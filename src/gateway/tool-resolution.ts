@@ -1,5 +1,10 @@
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import {
+  resolveAgentWorkspaceDir,
+  resolveAgentDir,
+  resolveDefaultAgentId,
+} from "../agents/agent-scope.js";
 import { createOpenClawTools } from "../agents/openclaw-tools.js";
+import { createOpenClawCodingTools } from "../agents/pi-tools.js";
 import {
   resolveEffectiveToolPolicy,
   resolveGroupToolPolicy,
@@ -63,12 +68,10 @@ export function resolveGatewayScopedTools(params: {
   const subagentPolicy = isSubagentSessionKey(params.sessionKey)
     ? resolveSubagentToolPolicy(params.cfg)
     : undefined;
-  const workspaceDir = resolveAgentWorkspaceDir(
-    params.cfg,
-    agentId ?? resolveDefaultAgentId(params.cfg),
-  );
+  const resolvedAgentId = agentId ?? resolveDefaultAgentId(params.cfg);
+  const workspaceDir = resolveAgentWorkspaceDir(params.cfg, resolvedAgentId);
 
-  const allTools = createOpenClawTools({
+  const gatewayTools = createOpenClawTools({
     agentSessionKey: params.sessionKey,
     agentChannel: params.messageProvider ?? undefined,
     agentAccountId: params.accountId,
@@ -90,6 +93,31 @@ export function resolveGatewayScopedTools(params: {
       subagentPolicy,
     ]),
   });
+
+  // Include coding tools (exec, edit, read, browser, etc.) on the HTTP surface
+  // so they're callable via /tools/invoke without an LLM round-trip — needed
+  // for deterministic automation (linting, testing, browser capture).
+  // Gated to HTTP only: the MCP loopback surface has no equivalent deny list for
+  // these tools so expanding it there would expose spawn/shell/cron by default.
+  // The gateway.tools deny list still applies on HTTP — exec is blocked by default
+  // unless gateway.tools.allow includes it.
+  // See: https://github.com/openclaw/openclaw/issues/37131
+  const surface = params.surface ?? "http";
+  const codingTools =
+    surface === "http"
+      ? createOpenClawCodingTools({
+          agentId: resolvedAgentId,
+          sessionKey: params.sessionKey,
+          workspaceDir,
+          agentDir: resolveAgentDir(params.cfg, resolvedAgentId),
+          config: params.cfg,
+          senderIsOwner: true, // HTTP bearer auth = operator = owner
+        })
+      : [];
+
+  // Merge, deduplicating by tool name (gateway tools take precedence)
+  const gatewayToolNames = new Set(gatewayTools.map((t) => t.name));
+  const allTools = [...gatewayTools, ...codingTools.filter((t) => !gatewayToolNames.has(t.name))];
 
   const policyFiltered = applyToolPolicyPipeline({
     tools: allTools,
@@ -114,7 +142,6 @@ export function resolveGatewayScopedTools(params: {
     ],
   });
 
-  const surface = params.surface ?? "http";
   const gatewayToolsCfg = params.cfg.gateway?.tools;
   const defaultGatewayDeny =
     surface === "http"
