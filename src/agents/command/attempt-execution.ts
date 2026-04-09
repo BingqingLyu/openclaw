@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import readline from "node:readline";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { normalizeReplyPayload } from "../../auto-reply/reply/normalize-reply.js";
 import type { ThinkLevel, VerboseLevel } from "../../auto-reply/thinking.js";
 import {
@@ -352,7 +353,7 @@ export function runAgentAttempt(params: {
   allowTransientCooldownProbe?: boolean;
   sessionHasHistory?: boolean;
   suppressPromptPersistenceOnRetry?: boolean;
-  onUserMessagePersisted?: () => void;
+  onUserMessagePersisted?: (message: Extract<AgentMessage, { role: "user" }>) => void;
 }) {
   const effectivePrompt = resolveFallbackRetryPrompt({
     body: params.body,

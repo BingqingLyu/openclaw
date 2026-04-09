@@ -830,8 +830,8 @@ export async function runEmbeddedAttempt(
         allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
         allowedToolNames,
         suppressNextUserMessagePersistence: params.suppressNextUserMessagePersistence,
-        onUserMessagePersisted: () => {
-          params.onUserMessagePersisted?.();
+        onUserMessagePersisted: (message) => {
+          params.onUserMessagePersisted?.(message);
         },
       });
       trackSessionManagerAccess(params.sessionFile);
