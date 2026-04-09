@@ -1160,8 +1160,12 @@ async function dispatchDiscordCommandInteraction(params: {
   });
   const nativeCommandName = command.nativeName ?? command.key;
   const isBuiltinCommand = listChatCommands().some((entry) => entry.key === command.key);
+  const hasExplicitCommandsAllowFrom = Boolean(
+    cfg.commands?.allowFrom && typeof cfg.commands.allowFrom === "object",
+  );
   const canBypassSharedAuthMismatch =
     commandAuthorized &&
+    !hasExplicitCommandsAllowFrom &&
     (shouldBypassConfiguredAcpEnsure(nativeCommandName) ||
       shouldBypassConfiguredAcpGuildGuards(nativeCommandName));
 
