@@ -25,8 +25,9 @@ describe("iMessage sent-message echo cache", () => {
     cache.remember("acct:imessage:+1555", { text: "hello world" });
 
     // iMessage can prefix echoed outbound text with NUL bytes in chat.db
-    expect(cache.has("acct:imessage:+1555", { text: "\0hello world" })).toBe(true);
-    expect(cache.has("acct:imessage:+1555", { text: "\0\0hello world" })).toBe(true);
+    const nul = String.fromCharCode(0);
+    expect(cache.has("acct:imessage:+1555", { text: nul + "hello world" })).toBe(true);
+    expect(cache.has("acct:imessage:+1555", { text: nul + nul + "hello world" })).toBe(true);
   });
 
   it("matches by outbound message id and ignores placeholder ids", () => {
