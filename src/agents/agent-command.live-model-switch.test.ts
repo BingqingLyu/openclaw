@@ -485,6 +485,41 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     });
   });
 
+  it("suppresses duplicate user persistence only after the current turn has flushed", async () => {
+    const attemptCalls: Array<Record<string, unknown>> = [];
+    state.runWithModelFallbackMock.mockImplementation(async (params: FallbackRunnerParams) => {
+      const first = await params.run(params.provider, params.model);
+      const result = await params.run(params.provider, params.model);
+      return {
+        result,
+        provider: params.provider,
+        model: params.model,
+        attempts: [first],
+      };
+    });
+    state.runAgentAttemptMock.mockImplementation(async (params: unknown) => {
+      const attemptParams = params as Record<string, unknown>;
+      attemptCalls.push(attemptParams);
+      const persisted = attemptParams.onUserMessagePersisted;
+      if (typeof persisted === "function") {
+        persisted();
+      }
+      return makeSuccessResult("openai", "gpt-5.4");
+    });
+
+    const agentCommand = await getAgentCommand();
+    await agentCommand({
+      message: "hello",
+      to: "+1234567890",
+      senderIsOwner: true,
+    });
+
+    expect(attemptCalls).toHaveLength(2);
+    expect(attemptCalls[0]?.suppressPromptPersistenceOnRetry).not.toBe(true);
+    expect(typeof attemptCalls[0]?.onUserMessagePersisted).toBe("function");
+    expect(attemptCalls[1]?.suppressPromptPersistenceOnRetry).toBe(true);
+  });
+
   it("does not flip hasSessionModelOverride on auth-only switch with same model", async () => {
     let invocation = 0;
     state.runWithModelFallbackMock.mockImplementation(async (params: FallbackRunnerParams) => {

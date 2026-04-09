@@ -680,6 +680,8 @@ export async function runEmbeddedPiAgent(
             bootstrapPromptWarningSignaturesSeen,
             bootstrapPromptWarningSignature:
               bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1],
+            suppressNextUserMessagePersistence: params.suppressNextUserMessagePersistence,
+            onUserMessagePersisted: params.onUserMessagePersisted,
           });
 
           const {

@@ -784,6 +784,7 @@ async function agentCommandInternal(
         });
 
         let fallbackAttemptIndex = 0;
+        let currentTurnUserMessagePersisted = false;
         const fallbackResult = await runWithModelFallback({
           cfg,
           provider,
@@ -821,6 +822,11 @@ async function agentCommandInternal(
               storePath,
               allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
               sessionHasHistory: !isNewSession || (await sessionFileHasContent(sessionFile)),
+              suppressPromptPersistenceOnRetry:
+                isFallbackRetry && currentTurnUserMessagePersisted,
+              onUserMessagePersisted: () => {
+                currentTurnUserMessagePersisted = true;
+              },
               onAgentEvent: (evt) => {
                 if (
                   evt.stream === "lifecycle" &&

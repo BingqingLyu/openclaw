@@ -351,6 +351,8 @@ export function runAgentAttempt(params: {
   storePath?: string;
   allowTransientCooldownProbe?: boolean;
   sessionHasHistory?: boolean;
+  suppressPromptPersistenceOnRetry?: boolean;
+  onUserMessagePersisted?: () => void;
 }) {
   const effectivePrompt = resolveFallbackRetryPrompt({
     body: params.body,
@@ -503,6 +505,8 @@ export function runAgentAttempt(params: {
     allowTransientCooldownProbe: params.allowTransientCooldownProbe,
     cleanupBundleMcpOnRunEnd: params.opts.cleanupBundleMcpOnRunEnd,
     onAgentEvent: params.onAgentEvent,
+    suppressNextUserMessagePersistence: params.suppressPromptPersistenceOnRetry === true,
+    onUserMessagePersisted: params.onUserMessagePersisted,
     bootstrapPromptWarningSignaturesSeen,
     bootstrapPromptWarningSignature,
   });

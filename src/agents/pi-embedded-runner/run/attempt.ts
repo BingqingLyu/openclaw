@@ -829,6 +829,10 @@ export async function runEmbeddedAttempt(
         inputProvenance: params.inputProvenance,
         allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
         allowedToolNames,
+        suppressNextUserMessagePersistence: params.suppressNextUserMessagePersistence,
+        onUserMessagePersisted: () => {
+          params.onUserMessagePersisted?.();
+        },
       });
       trackSessionManagerAccess(params.sessionFile);
 

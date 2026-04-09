@@ -99,6 +99,10 @@ export function installSessionToolResultGuard(
     beforeMessageWriteHook?: (
       event: PluginHookBeforeMessageWriteEvent,
     ) => PluginHookBeforeMessageWriteResult | undefined;
+    suppressNextUserMessagePersistence?: boolean;
+    onUserMessagePersisted?: (
+      message: Extract<AgentMessage, { role: "user" }>,
+    ) => void | Promise<void>;
   },
 ): {
   flushPendingToolResults: () => void;
@@ -123,6 +127,7 @@ export function installSessionToolResultGuard(
 
   const allowSyntheticToolResults = opts?.allowSyntheticToolResults ?? true;
   const beforeWrite = opts?.beforeMessageWriteHook;
+  let suppressNextUserMessagePersistence = opts?.suppressNextUserMessagePersistence === true;
 
   /**
    * Run the before_message_write hook. Returns the (possibly modified) message,
@@ -238,6 +243,13 @@ export function installSessionToolResultGuard(
     if (!finalMessage) {
       return undefined;
     }
+    if (
+      (finalMessage as { role?: unknown }).role === "user" &&
+      suppressNextUserMessagePersistence
+    ) {
+      suppressNextUserMessagePersistence = false;
+      return undefined;
+    }
     const result = originalAppend(finalMessage as never);
 
     const sessionFile = (
@@ -254,6 +266,9 @@ export function installSessionToolResultGuard(
 
     if (toolCalls.length > 0) {
       pendingState.trackToolCalls(toolCalls);
+    }
+    if ((finalMessage as { role?: unknown }).role === "user") {
+      void opts?.onUserMessagePersisted?.(finalMessage as Extract<AgentMessage, { role: "user" }>);
     }
 
     return result;
