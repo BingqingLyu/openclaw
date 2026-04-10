@@ -229,6 +229,7 @@ function describeExecBody(body: string, locale: ToolSummaryLocale): string | und
   }
   if (
     normalized.startsWith("tail -f") ||
+    normalized.startsWith("tail -n") ||
     normalized.includes(" tail -f ") ||
     normalized.includes(" tail -n ")
   ) {

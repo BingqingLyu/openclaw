@@ -64,6 +64,11 @@ describe("tool meta formatting", () => {
     expect(out).toBe("🛠️ コマンド実行: テスト実行 · pnpm test");
   });
 
+  it("detects standalone tail -n log tracking commands", () => {
+    const out = formatToolAggregate("exec", ["tail -n 50 /var/log/app.log"], { locale: "zh-CN" });
+    expect(out).toBe("🛠️ 执行命令: 跟踪日志 · tail -n 50 /var/log/app.log");
+  });
+
   it("formats prefixes with default labels", () => {
     vi.stubEnv("HOME", home);
     expect(formatToolPrefix(undefined, undefined)).toBe("🧩 Tool");

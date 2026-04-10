@@ -1,3 +1,4 @@
+import type { ToolSummaryLocale } from "../auto-reply/tool-meta.js";
 import type { AgentModelConfig, AgentSandboxConfig } from "./types.agents-shared.js";
 import type {
   BlockStreamingChunkConfig,
@@ -232,7 +233,7 @@ export type AgentDefaultsConfig = {
     /** Minimum interval between emitted tool summaries, in milliseconds (default: 0). */
     minIntervalMs?: number;
     /** Locale used for localized tool labels and common exec action hints. Default: "en". */
-    locale?: "en" | "zh-CN" | "ko" | "ja";
+    locale?: ToolSummaryLocale;
   };
   /** Default elevated level when no /elevated directive is present. */
   elevatedDefault?: "off" | "on" | "ask" | "full";
