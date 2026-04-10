@@ -141,7 +141,7 @@ async function resolveOAuthToken(params: {
           ? (cred as { accountId?: string }).accountId
           : undefined;
       return {
-        provider: params.provider as UsageProviderId,
+        provider: params.provider,
         token: resolved.apiKey,
         ...(accountId ? { accountId } : {}),
       };
@@ -174,7 +174,7 @@ async function resolveProviderUsageAuthViaPlugin(params: {
           envDirect: options?.envDirect,
         }),
       resolveOAuthToken: async (options) => {
-        const resolvedProvider = (options?.provider ?? params.provider) as UsageProviderId;
+        const resolvedProvider = options?.provider ?? params.provider;
         const auth = await resolveOAuthToken({
           state: params.state,
           provider: resolvedProvider,
