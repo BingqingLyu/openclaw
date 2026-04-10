@@ -504,10 +504,52 @@ describe("createAcpReplyProjector", () => {
     expect(deliveries[0]).toEqual(
       expect.objectContaining({
         kind: "tool",
-        text: expect.stringContaining("도구 호출: Run tests · 상태=진행 중"),
+        text: expect.stringContaining("도구 호출"),
       }),
     );
+    expect(deliveries[0]?.text).toContain("Run tests");
+    expect(deliveries[0]?.text).toContain("상태=진행 중");
     await projector.flush(true);
+  });
+
+  it("redacts sensitive tool details in localized ACP tool summaries", async () => {
+    const deliveries: Delivery[] = [];
+    const projector = createAcpReplyProjector({
+      cfg: createCfg({
+        agents: {
+          defaults: {
+            toolSummaries: {
+              locale: "ja",
+            },
+          },
+        },
+        acp: {
+          enabled: true,
+          stream: {
+            deliveryMode: "live",
+            tagVisibility: {
+              tool_call: true,
+            },
+          },
+        },
+      }),
+      shouldSendToolSummaries: true,
+      deliver: async (kind, payload) => {
+        deliveries.push({ kind, text: payload.text });
+        return true;
+      },
+    });
+
+    await emitToolLifecycleEvent(projector, {
+      tag: "tool_call",
+      toolCallId: "call_redact",
+      status: "in_progress",
+      title: "Run tests --token sk-1234567890abcdef",
+      text: "Run tests --token sk-1234567890abcdef (in_progress)",
+    });
+
+    expect(deliveries[0]?.text).toContain("ツール呼び出し");
+    expect(deliveries[0]?.text).not.toContain("sk-1234567890abcdef");
   });
 
   it("throttles ACP tool summaries when minIntervalMs is configured", async () => {
@@ -562,6 +604,70 @@ describe("createAcpReplyProjector", () => {
       await emitToolLifecycleEvent(projector, {
         tag: "tool_call_update",
         toolCallId: "call_throttle_final",
+        status: "completed",
+        title: "Run tests",
+        text: "Run tests (completed)",
+      });
+
+      expect(deliveries).toHaveLength(2);
+      expectToolCallSummary(deliveries[0]);
+      expectToolCallSummary(deliveries[1]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not consume the throttle window when a duplicate summary is deduped", async () => {
+    vi.useFakeTimers();
+    try {
+      const deliveries: Delivery[] = [];
+      const projector = createAcpReplyProjector({
+        cfg: createCfg({
+          agents: {
+            defaults: {
+              toolSummaries: {
+                minIntervalMs: 1000,
+              },
+            },
+          },
+          acp: {
+            enabled: true,
+            stream: {
+              deliveryMode: "live",
+              tagVisibility: {
+                tool_call: true,
+                tool_call_update: true,
+              },
+            },
+          },
+        }),
+        shouldSendToolSummaries: true,
+        deliver: async (kind, payload) => {
+          deliveries.push({ kind, text: payload.text });
+          return true;
+        },
+      });
+
+      await emitToolLifecycleEvent(projector, {
+        tag: "tool_call",
+        toolCallId: "call_first",
+        status: "in_progress",
+        title: "List files",
+        text: "List files (in_progress)",
+      });
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await emitToolLifecycleEvent(projector, {
+        tag: "tool_call_update",
+        toolCallId: "call_first",
+        status: "in_progress",
+        title: "List files",
+        text: "List files (in_progress)",
+      });
+      await emitToolLifecycleEvent(projector, {
+        tag: "tool_call_update",
+        toolCallId: "call_second",
         status: "completed",
         title: "Run tests",
         text: "Run tests (completed)",

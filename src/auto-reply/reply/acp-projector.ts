@@ -1,6 +1,6 @@
 import type { AcpRuntimeEvent, AcpSessionUpdateTag } from "../../acp/runtime/types.js";
 import { EmbeddedBlockChunker } from "../../agents/pi-embedded-block-chunker.js";
-import { resolveToolDisplay } from "../../agents/tool-display.js";
+import { formatToolDetail, resolveToolDisplay } from "../../agents/tool-display.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { prefixSystemMessage } from "../../infra/system-message.js";
 import {
@@ -266,7 +266,7 @@ function renderToolSummaryText(
     meta: detailParts.join(" · ") || "tool call",
   });
   const label = resolveLocalizedToolCallLabel(locale) ?? display.label;
-  const detail = detailParts.join(" · ");
+  const detail = formatToolDetail(display);
   return detail ? `${display.emoji} ${label}: ${detail}` : `${display.emoji} ${label}`;
 }
 
@@ -446,12 +446,11 @@ export function createAcpReplyProjector(params: {
       return;
     }
 
+    const emittedAt = Date.now();
     if (toolSummaryMinIntervalMs > 0) {
-      const now = Date.now();
-      if (now - lastToolSummarySentAt < toolSummaryMinIntervalMs) {
+      if (emittedAt - lastToolSummarySentAt < toolSummaryMinIntervalMs) {
         return;
       }
-      lastToolSummarySentAt = now;
     }
 
     const renderedToolSummary = renderToolSummaryText(event, toolSummaryLocale);
@@ -506,6 +505,7 @@ export function createAcpReplyProjector(params: {
       await params.deliver("tool", { text: toolSummary }, deliveryMeta);
     }
     lastToolHash = hash;
+    lastToolSummarySentAt = emittedAt;
   };
 
   const emitTruncationNotice = async () => {
