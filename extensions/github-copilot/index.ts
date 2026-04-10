@@ -184,6 +184,14 @@ export default definePluginEntry({
               ? configuredBaseUrl
               : baseUrl;
 
+          // Forward any user-configured provider headers (e.g. enterprise
+          // proxy auth) so discovery uses the same credentials as runtime.
+          const configuredHeaders = ctx.config?.models?.providers?.["github-copilot"]?.headers;
+          const extraHeaders =
+            configuredHeaders && typeof configuredHeaders === "object"
+              ? (configuredHeaders as Record<string, string>)
+              : undefined;
+
           let discoveredModels: ModelDefinitionConfig[] = [];
           if (copilotToken && !hasExplicitModels) {
             try {
@@ -192,6 +200,7 @@ export default definePluginEntry({
                 baseUrl: discoveryBaseUrl,
                 copilotToken,
                 knownModelIds,
+                extraHeaders,
               });
             } catch {
               // best-effort: discovery failure is not fatal

@@ -70,14 +70,16 @@ export async function discoverCopilotModels(params: {
   baseUrl: string;
   copilotToken: string;
   knownModelIds?: Set<string>;
+  extraHeaders?: Record<string, string>;
 }): Promise<ModelDefinitionConfig[]> {
-  const { baseUrl, copilotToken, knownModelIds } = params;
+  const { baseUrl, copilotToken, knownModelIds, extraHeaders } = params;
 
   const url = `${baseUrl.replace(/\/+$/, "")}/models`;
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${copilotToken}`,
       ...COPILOT_IDE_HEADERS,
+      ...extraHeaders,
     },
     signal: AbortSignal.timeout(10_000),
   });
