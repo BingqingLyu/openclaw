@@ -65,6 +65,8 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
   const reasoningMode = params.reasoningMode ?? "off";
   const toolResultFormat = params.toolResultFormat ?? "markdown";
   const useMarkdown = toolResultFormat === "markdown";
+  const toolSummaryMinIntervalMs = Math.max(0, params.toolSummaryMinIntervalMs ?? 0);
+  const toolSummaryLocale = params.toolSummaryLocale ?? "en";
   const initialPendingToolMediaUrls = collectPendingMediaFromInternalEvents(params.internalEvents);
   const state: EmbeddedPiSubscribeState = {
     assistantTexts: [],
@@ -125,6 +127,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     total: 0,
   };
   let compactionCount = 0;
+  let lastToolSummarySentAt = 0;
 
   const assistantTexts = state.assistantTexts;
   const toolMetas = state.toolMetas;
@@ -419,8 +422,16 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     }
   };
   const emitToolSummary = (toolName?: string, meta?: string) => {
+    if (toolSummaryMinIntervalMs > 0) {
+      const now = Date.now();
+      if (now - lastToolSummarySentAt < toolSummaryMinIntervalMs) {
+        return;
+      }
+      lastToolSummarySentAt = now;
+    }
     const agg = formatToolAggregate(toolName, meta ? [meta] : undefined, {
       markdown: useMarkdown,
+      locale: toolSummaryLocale,
     });
     emitToolResultMessage(toolName, agg);
   };
@@ -430,6 +441,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     }
     const agg = formatToolAggregate(toolName, meta ? [meta] : undefined, {
       markdown: useMarkdown,
+      locale: toolSummaryLocale,
     });
     const message = `${agg}\n${formatToolOutputBlock(output)}`;
     emitToolResultMessage(toolName, message, result);

@@ -172,6 +172,15 @@ export const AgentDefaultsSchema = z
       ])
       .optional(),
     verboseDefault: z.union([z.literal("off"), z.literal("on"), z.literal("full")]).optional(),
+    toolSummaries: z
+      .object({
+        minIntervalMs: z.number().int().nonnegative().optional(),
+        locale: z
+          .union([z.literal("en"), z.literal("zh-CN"), z.literal("ko"), z.literal("ja")])
+          .optional(),
+      })
+      .strict()
+      .optional(),
     elevatedDefault: z
       .union([z.literal("off"), z.literal("on"), z.literal("ask"), z.literal("full")])
       .optional(),

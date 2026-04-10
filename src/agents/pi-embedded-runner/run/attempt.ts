@@ -1413,6 +1413,8 @@ export async function runEmbeddedAttempt(
           verboseLevel: params.verboseLevel,
           reasoningMode: params.reasoningLevel ?? "off",
           toolResultFormat: params.toolResultFormat,
+          toolSummaryMinIntervalMs: params.config?.agents?.defaults?.toolSummaries?.minIntervalMs,
+          toolSummaryLocale: params.config?.agents?.defaults?.toolSummaries?.locale,
           shouldEmitToolResult: params.shouldEmitToolResult,
           shouldEmitToolOutput: params.shouldEmitToolOutput,
           onToolResult: params.onToolResult,

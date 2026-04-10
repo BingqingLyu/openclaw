@@ -249,6 +249,10 @@ Save to `~/.openclaw/openclaw.json` and you can DM the bot from that number.
       skills: ["github", "weather"], // inherited by agents that omit list[].skills
       thinkingDefault: "low",
       verboseDefault: "off",
+      toolSummaries: {
+        locale: "ja", // en | zh-CN | ko | ja
+        minIntervalMs: 1000,
+      },
       elevatedDefault: "on",
       blockStreamingDefault: "off",
       blockStreamingBreak: "text_end",

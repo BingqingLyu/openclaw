@@ -4517,6 +4517,37 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                   },
                 ],
               },
+              toolSummaries: {
+                type: "object",
+                properties: {
+                  minIntervalMs: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 9007199254740991,
+                  },
+                  locale: {
+                    anyOf: [
+                      {
+                        type: "string",
+                        const: "en",
+                      },
+                      {
+                        type: "string",
+                        const: "zh-CN",
+                      },
+                      {
+                        type: "string",
+                        const: "ko",
+                      },
+                      {
+                        type: "string",
+                        const: "ja",
+                      },
+                    ],
+                  },
+                },
+                additionalProperties: false,
+              },
               elevatedDefault: {
                 anyOf: [
                   {

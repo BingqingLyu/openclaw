@@ -67,4 +67,59 @@ describe("subscribeEmbeddedPiSession", () => {
 
     expect(onToolResult).toHaveBeenCalledTimes(1);
   });
+
+  it("localizes tool summaries when a locale is configured", async () => {
+    const onToolResult = vi.fn();
+
+    const toolHarness = createSubscribedSessionHarness({
+      runId: "run-tool-locale",
+      verboseLevel: "on",
+      toolSummaryLocale: "zh-CN",
+      onToolResult,
+    });
+
+    toolHarness.emit({
+      type: "tool_execution_start",
+      toolName: "read",
+      toolCallId: "tool-locale-1",
+      args: { path: "/tmp/localized.txt" },
+    });
+
+    await Promise.resolve();
+
+    expect(onToolResult).toHaveBeenCalledTimes(1);
+    const payload = onToolResult.mock.calls[0][0];
+    expect(payload.text).toContain("读文件");
+    expect(payload.text).toContain("/tmp/localized.txt");
+  });
+
+  it("rate limits tool summaries when a minimum interval is configured", async () => {
+    const onToolResult = vi.fn();
+
+    const toolHarness = createSubscribedSessionHarness({
+      runId: "run-tool-rate-limit",
+      verboseLevel: "on",
+      toolSummaryMinIntervalMs: 1000,
+      onToolResult,
+    });
+
+    toolHarness.emit({
+      type: "tool_execution_start",
+      toolName: "read",
+      toolCallId: "tool-rate-limit-1",
+      args: { path: "/tmp/one.txt" },
+    });
+    toolHarness.emit({
+      type: "tool_execution_start",
+      toolName: "write",
+      toolCallId: "tool-rate-limit-2",
+      args: { path: "/tmp/two.txt" },
+    });
+
+    await Promise.resolve();
+
+    expect(onToolResult).toHaveBeenCalledTimes(1);
+    const payload = onToolResult.mock.calls[0][0];
+    expect(payload.text).toContain("/tmp/one.txt");
+  });
 });
