@@ -37,13 +37,14 @@ import {
 } from "../../plugins/conversation-binding.js";
 import { getGlobalHookRunner, getGlobalPluginRegistry } from "../../plugins/hook-runner-global.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
-import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import {
+  normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "../../shared/string-coerce.js";
 import { normalizeTtsAutoMode, resolveConfiguredTtsMode } from "../../tts/tts-config.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
+import { isControlCommandMessage } from "../command-detection.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import { normalizeVerboseLevel } from "../thinking.js";
 import {
@@ -567,12 +568,19 @@ export async function dispatchReplyFromConfig(params: {
       chatType: sessionStoreEntry.entry?.chatType,
     });
 
-    const normalizedSurface = (ctx.Surface ?? ctx.Provider ?? "").trim().toLowerCase();
+    const shouldSendToolUpdatesForAuthorizedGroupCommand =
+      ctx.ChatType === "group" &&
+      ctx.IsForum !== true &&
+      ctx.CommandAuthorized &&
+      isControlCommandMessage(hookContext.content, cfg);
     const shouldSendToolSummaries =
       ctx.ChatType !== "group" ||
       ctx.IsForum === true ||
-      ((normalizedSurface === "feishu" || normalizedSurface === "lark") && ctx.CommandAuthorized);
-    const shouldSendToolStartStatuses = ctx.ChatType !== "group" || ctx.IsForum === true;
+      shouldSendToolUpdatesForAuthorizedGroupCommand;
+    const shouldSendToolStartStatuses =
+      ctx.ChatType !== "group" ||
+      ctx.IsForum === true ||
+      shouldSendToolUpdatesForAuthorizedGroupCommand;
     const sendFinalPayload = async (
       payload: ReplyPayload,
     ): Promise<{ queuedFinal: boolean; routedFinalCount: number }> => {
