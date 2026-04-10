@@ -409,7 +409,6 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     isTimeoutErrorMessage: mockedIsTimeoutErrorMessage,
     sanitizeUserFacingText: mockedSanitizeUserFacingText,
     pickFallbackThinkingLevel: mockedPickFallbackThinkingLevel,
-    sanitizeUserFacingText: vi.fn((text: unknown) => (typeof text === "string" ? text : "")),
   }));
 
   vi.doMock("./run/attempt.js", () => ({
