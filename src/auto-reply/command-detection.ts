@@ -38,7 +38,7 @@ export function hasControlCommand(
   if (!trimmed) {
     return false;
   }
-  const stripped = stripInboundMetadata(stripLeadingAddressingPrefixes(trimmed));
+  const stripped = stripInboundMetadata(trimmed);
   if (!stripped) {
     return false;
   }
@@ -84,6 +84,12 @@ export function isControlCommandMessage(
     return true;
   }
   const stripped = stripInboundMetadata(stripLeadingAddressingPrefixes(trimmed));
+  if (!stripped) {
+    return false;
+  }
+  if (hasControlCommand(stripped, cfg, options)) {
+    return true;
+  }
   const normalized =
     normalizeOptionalLowercaseString(normalizeCommandBody(stripped, options)) ?? "";
   return isAbortTrigger(normalized);
