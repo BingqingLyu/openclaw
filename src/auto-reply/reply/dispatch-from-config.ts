@@ -567,7 +567,11 @@ export async function dispatchReplyFromConfig(params: {
       chatType: sessionStoreEntry.entry?.chatType,
     });
 
-    const shouldSendToolSummaries = ctx.ChatType !== "group" || ctx.IsForum === true;
+    const normalizedSurface = (ctx.Surface ?? ctx.Provider ?? "").trim().toLowerCase();
+    const shouldSendToolSummaries =
+      ctx.ChatType !== "group" ||
+      ctx.IsForum === true ||
+      ((normalizedSurface === "feishu" || normalizedSurface === "lark") && ctx.CommandAuthorized);
     const shouldSendToolStartStatuses = ctx.ChatType !== "group" || ctx.IsForum === true;
     const sendFinalPayload = async (
       payload: ReplyPayload,
