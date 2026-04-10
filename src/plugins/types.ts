@@ -2057,6 +2057,16 @@ export type PluginSetupAutoEnableProbe = (
   ctx: PluginSetupAutoEnableContext,
 ) => string | string[] | null | undefined;
 
+/**
+ * Contributes arbitrary status strings to the TUI footer.
+ */
+export type PluginStatusProvider = {
+  /** A unique identifier for this provider. */
+  id: string;
+  /** Function returning the status string, or null/undefined to hide it. */
+  getStatus: () => string | null | undefined;
+};
+
 /** Main registration API injected into native plugin entry files. */
 export type OpenClawPluginApi = {
   id: string;
@@ -2076,6 +2086,7 @@ export type OpenClawPluginApi = {
    */
   runtime: PluginRuntime;
   logger: PluginLogger;
+  registerStatusProvider: (provider: PluginStatusProvider) => void;
   registerTool: (
     tool: AnyAgentTool | OpenClawPluginToolFactory,
     opts?: OpenClawPluginToolOptions,
