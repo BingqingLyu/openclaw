@@ -32,6 +32,14 @@ function normalizeProfileProvider(value: string | undefined): string {
   return normalizeProviderId(value ?? "");
 }
 
+function resolveUsageProviderId(
+  value: string | undefined,
+  fallback: UsageProviderId,
+): UsageProviderId {
+  const normalized = normalizeProviderId(value ?? "");
+  return (normalized || fallback) as UsageProviderId;
+}
+
 function resolveUsageAuthStore(state: UsageAuthState): AuthStore {
   state.store ??= ensureAuthProfileStore(state.agentDir, {
     allowKeychainPrompt: false,
@@ -174,12 +182,14 @@ async function resolveProviderUsageAuthViaPlugin(params: {
           envDirect: options?.envDirect,
         }),
       resolveOAuthToken: async (options) => {
-        const resolvedProvider = options?.provider ?? params.provider;
+        const resolvedProvider = resolveUsageProviderId(
+          options?.provider,
+          params.provider,
+        );
         const auth = await resolveOAuthToken({
           state: params.state,
           provider: resolvedProvider,
-          preferredProfileId:
-            resolvedProvider === params.provider ? params.preferredProfileId : undefined,
+          preferredProfileId: params.preferredProfileId,
         });
         return auth
           ? {

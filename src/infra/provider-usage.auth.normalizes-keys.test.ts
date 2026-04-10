@@ -493,6 +493,55 @@ describe("resolveProviderAuths key normalization", () => {
     });
   });
 
+  it("preserves preferred profile ids across provider override lookups", async () => {
+    providerRuntimeMocks.providerRuntimeMock.resolveProviderUsageAuthWithPlugin.mockImplementationOnce(
+      async (params) => {
+        if (params.provider !== "minimax") {
+          return null;
+        }
+        const auth = await params.context.resolveOAuthToken({ provider: "minimax-portal" });
+        return auth ? { token: auth.token } : null;
+      },
+    );
+
+    await withSuiteHome(async (home) => {
+      await writeAuthProfiles(home, {
+        "minimax-portal:default": {
+          type: "oauth",
+          provider: "minimax-portal",
+          token: "token-default",
+          expires: Date.now() + 60_000,
+        },
+        "minimax-portal:kate@gmail.com": {
+          type: "oauth",
+          provider: "minimax-portal",
+          token: "token-kate",
+          expires: Date.now() + 60_000,
+        },
+      });
+      await writeProfileOrder(home, "minimax-portal", [
+        "minimax-portal:default",
+        "minimax-portal:kate@gmail.com",
+      ]);
+
+      const result = await resolveProviderAuths({
+        providers: ["minimax"],
+        agentDir: agentDirForHome(home),
+        env: buildSuiteEnv(home),
+        preferredProfileIds: {
+          minimax: "minimax-portal:kate@gmail.com",
+        },
+      });
+
+      expect(result).toEqual([
+        {
+          provider: "minimax",
+          token: "token-kate",
+        },
+      ]);
+    });
+  });
+
   async function expectResolvedAuthsFromSuiteHome(params: {
     providers: Parameters<typeof resolveProviderAuths>[0]["providers"];
     expected: Awaited<ReturnType<typeof resolveProviderAuths>>;
