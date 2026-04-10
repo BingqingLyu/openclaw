@@ -464,6 +464,117 @@ describe("createAcpReplyProjector", () => {
     expectToolCallSummary(deliveries[1]);
   });
 
+  it("localizes ACP tool summaries using the shared tool summary locale config", async () => {
+    const { deliveries, projector } = createLiveToolLifecycleHarness();
+    const localizedProjector = createAcpReplyProjector({
+      cfg: createCfg({
+        agents: {
+          defaults: {
+            toolSummaries: {
+              locale: "ko",
+            },
+          },
+        },
+        acp: {
+          enabled: true,
+          stream: {
+            deliveryMode: "live",
+            tagVisibility: {
+              tool_call: true,
+              tool_call_update: true,
+            },
+          },
+        },
+      }),
+      shouldSendToolSummaries: true,
+      deliver: async (kind, payload) => {
+        deliveries.push({ kind, text: payload.text });
+        return true;
+      },
+    });
+
+    await emitToolLifecycleEvent(localizedProjector, {
+      tag: "tool_call",
+      toolCallId: "call_locale",
+      status: "in_progress",
+      title: "Run tests",
+      text: "Run tests (in_progress)",
+    });
+
+    expect(deliveries[0]).toEqual(
+      expect.objectContaining({
+        kind: "tool",
+        text: expect.stringContaining("도구 호출: Run tests · 상태=진행 중"),
+      }),
+    );
+    await projector.flush(true);
+  });
+
+  it("throttles ACP tool summaries when minIntervalMs is configured", async () => {
+    vi.useFakeTimers();
+    try {
+      const deliveries: Delivery[] = [];
+      const projector = createAcpReplyProjector({
+        cfg: createCfg({
+          agents: {
+            defaults: {
+              toolSummaries: {
+                minIntervalMs: 1000,
+              },
+            },
+          },
+          acp: {
+            enabled: true,
+            stream: {
+              deliveryMode: "live",
+              tagVisibility: {
+                tool_call: true,
+                tool_call_update: true,
+              },
+            },
+          },
+        }),
+        shouldSendToolSummaries: true,
+        deliver: async (kind, payload) => {
+          deliveries.push({ kind, text: payload.text });
+          return true;
+        },
+      });
+
+      await emitToolLifecycleEvent(projector, {
+        tag: "tool_call",
+        toolCallId: "call_throttle",
+        status: "in_progress",
+        title: "List files",
+        text: "List files (in_progress)",
+      });
+      await emitToolLifecycleEvent(projector, {
+        tag: "tool_call_update",
+        toolCallId: "call_throttle_next",
+        status: "completed",
+        title: "Run tests",
+        text: "Run tests (completed)",
+      });
+
+      expect(deliveries).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await emitToolLifecycleEvent(projector, {
+        tag: "tool_call_update",
+        toolCallId: "call_throttle_final",
+        status: "completed",
+        title: "Run tests",
+        text: "Run tests (completed)",
+      });
+
+      expect(deliveries).toHaveLength(2);
+      expectToolCallSummary(deliveries[0]);
+      expectToolCallSummary(deliveries[1]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps terminal tool updates even when rendered summaries are truncated", async () => {
     const { deliveries, projector } = createLiveToolLifecycleHarness({
       maxSessionUpdateChars: 48,
