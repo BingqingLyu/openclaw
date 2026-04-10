@@ -349,9 +349,7 @@ export async function triggerInternalHook(event: InternalHookEvent): Promise<voi
         log.error(`Hook error [${event.type}:${event.action}]: ${message}`);
       }
     }
-    }
   });
-}
 }
 
 /**
