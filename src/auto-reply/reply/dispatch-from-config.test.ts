@@ -1092,6 +1092,43 @@ describe("dispatchReplyFromConfig", () => {
     expect(dispatcher.sendFinalReply).toHaveBeenCalledTimes(1);
   });
 
+  it("delivers group tool updates for authorized commands with leading mention tags", async () => {
+    setNoAbort();
+    const cfg = emptyConfig;
+    const dispatcher = createDispatcher();
+    const ctx = buildTestCtx({
+      Provider: "feishu",
+      Surface: "feishu",
+      ChatType: "group",
+      CommandAuthorized: true,
+      BodyForCommands: '<at user_id="ou_bot">Bot</at> /status',
+      Body: '<at user_id="ou_bot">Bot</at> /status',
+      RawBody: '<at user_id="ou_bot">Bot</at> /status',
+      CommandBody: '<at user_id="ou_bot">Bot</at> /status',
+    });
+
+    const replyResolver = async (
+      _ctx: MsgContext,
+      opts?: GetReplyOptions,
+      _cfg?: OpenClawConfig,
+    ) => {
+      await opts?.onToolResult?.({ text: "TOOL_PENDING" });
+      await opts?.onToolResult?.({ text: "🔧 read: /tmp/feishu.txt" });
+      return { text: "done" } satisfies ReplyPayload;
+    };
+
+    await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
+
+    expect(dispatcher.sendToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "TOOL_PENDING" }),
+    );
+    expect(dispatcher.sendToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "🔧 read: /tmp/feishu.txt" }),
+    );
+    expect(dispatcher.sendToolResult).toHaveBeenCalledTimes(2);
+    expect(dispatcher.sendFinalReply).toHaveBeenCalledTimes(1);
+  });
+
   it("still suppresses tool summaries in unauthorized group sessions", async () => {
     setNoAbort();
     const cfg = emptyConfig;
