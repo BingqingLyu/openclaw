@@ -84,11 +84,12 @@ describe("dispatchAgentHook trust handling", () => {
     vi.restoreAllMocks();
   });
 
-  it("marks non-delivery status events as untrusted and sanitizes hook names", async () => {
+  it("marks surfaced non-delivery status events as untrusted and sanitizes hook names", async () => {
     runCronIsolatedAgentTurnMock.mockResolvedValueOnce({
       status: "ok",
       summary: "done",
       delivered: false,
+      announceToMain: true,
     });
 
     expect(capturedDispatchAgentHook).toBeDefined();
