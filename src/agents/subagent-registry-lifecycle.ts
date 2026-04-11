@@ -513,7 +513,7 @@ export function createSubagentRegistryLifecycleController(params: {
 
     markPendingFinalDelivery({
       entry,
-      error: didAnnounce ? undefined : "announce deferred or direct delivery failed",
+      error: "announce deferred or direct delivery failed",
     });
     entry.cleanupHandled = false;
     params.resumedRuns.delete(runId);
