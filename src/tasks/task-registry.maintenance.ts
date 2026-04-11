@@ -1,4 +1,4 @@
-import { readAcpSessionEntry } from "../acp/runtime/session-meta.js";
+import { readAcpSessionEntry, type AcpSessionStoreEntry } from "../acp/runtime/session-meta.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { isCronJobActive } from "../cron/active-jobs.js";
 import { getAgentRunContext } from "../infra/agent-events.js";
@@ -142,7 +142,13 @@ function hasBackingSession(task: TaskRecord): boolean {
     if (!acpEntry || acpEntry.storeReadFailed) {
       return true;
     }
-    return Boolean(acpEntry.entry);
+    if (!acpEntry.entry) {
+      return false;
+    }
+    if (hasZombieAcpBackingSession(task, Date.now(), acpEntry)) {
+      return false;
+    }
+    return true;
   }
   if (task.runtime === "subagent" || task.runtime === "cli") {
     if (task.runtime === "cli") {
@@ -160,6 +166,39 @@ function hasBackingSession(task: TaskRecord): boolean {
   return true;
 }
 
+const ACP_ZOMBIE_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function hasZombieAcpBackingSession(
+  task: TaskRecord,
+  now: number,
+  acpEntry?: AcpSessionStoreEntry | null,
+): boolean {
+  if (task.runtime !== "acp") {
+    return false;
+  }
+  const childSessionKey = task.childSessionKey?.trim();
+  if (!childSessionKey) {
+    return false;
+  }
+  acpEntry ??= taskRegistryMaintenanceRuntime.readAcpSessionEntry({
+    sessionKey: childSessionKey,
+  });
+  if (!acpEntry || acpEntry.storeReadFailed || !acpEntry.entry || !acpEntry.acp) {
+    return false;
+  }
+  if (acpEntry.acp.state !== "running") {
+    return false;
+  }
+  const referenceAt = task.lastEventAt ?? task.startedAt ?? task.createdAt;
+  const entryUpdatedAt = acpEntry.entry.updatedAt ?? 0;
+  const lastActivityAt = acpEntry.acp.lastActivityAt ?? 0;
+  const freshestSeenAt = Math.max(referenceAt, entryUpdatedAt, lastActivityAt);
+  if (now - freshestSeenAt < ACP_ZOMBIE_STALE_MS) {
+    return false;
+  }
+  return !acpEntry.entry.sessionFile;
+}
+
 function shouldMarkLost(task: TaskRecord, now: number): boolean {
   if (!isActiveTask(task)) {
     return false;
@@ -167,7 +206,10 @@ function shouldMarkLost(task: TaskRecord, now: number): boolean {
   if (!hasLostGraceExpired(task, now)) {
     return false;
   }
-  return !hasBackingSession(task);
+  if (!hasBackingSession(task)) {
+    return true;
+  }
+  return false;
 }
 
 function shouldPruneTerminalTask(task: TaskRecord, now: number): boolean {
