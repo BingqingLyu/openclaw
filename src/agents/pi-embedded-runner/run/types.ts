@@ -75,6 +75,7 @@ export type EmbeddedRunAttemptResult = {
         route: Exclude<PreemptiveCompactionRoute, "fits">;
         handled?: false;
       };
+  estimatedContextTokens?: number;
   sessionIdUsed: string;
   diagnosticTrace?: DiagnosticTraceContext;
   agentHarnessId?: string;

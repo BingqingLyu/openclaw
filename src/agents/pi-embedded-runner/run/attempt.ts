@@ -211,6 +211,7 @@ import {
 import {
   installContextEngineLoopHook,
   installToolResultContextGuard,
+  PREEMPTIVE_CONTEXT_OVERFLOW_MESSAGE,
 } from "../tool-result-context-guard.js";
 import {
   resolveLiveToolResultMaxChars,
@@ -301,6 +302,7 @@ import { resolveLlmIdleTimeoutMs, streamWithIdleTimeout } from "./llm-idle-timeo
 import { resolveMessageMergeStrategy } from "./message-merge-strategy.js";
 import {
   PREEMPTIVE_OVERFLOW_ERROR_TEXT,
+  estimatePrePromptTokens,
   shouldPreemptivelyCompactBeforePrompt,
 } from "./preemptive-compaction.js";
 import { rewriteSubmittedPromptTranscript } from "./transcript-prompt-rewrite.js";
@@ -2171,6 +2173,8 @@ export async function runEmbeddedAttempt(
 
       let preflightRecovery: EmbeddedRunAttemptResult["preflightRecovery"];
       let promptErrorSource: "prompt" | "compaction" | "precheck" | null = null;
+      let estimatedContextTokens: number | undefined;
+      let prePromptMessageCount = activeSession.messages.length;
       let skipPromptSubmission = false;
       try {
         const promptStartedAt = Date.now();
@@ -2531,6 +2535,7 @@ export async function runEmbeddedAttempt(
               preflightRecovery = { route: "compact_only" };
               promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
               promptErrorSource = "precheck";
+              estimatedContextTokens = preemptiveCompaction.estimatedPromptTokens;
               skipPromptSubmission = true;
             }
           }
@@ -2541,6 +2546,7 @@ export async function runEmbeddedAttempt(
                 : { route: "compact_only" };
             promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
             promptErrorSource = "precheck";
+            estimatedContextTokens = preemptiveCompaction.estimatedPromptTokens;
             log.warn(
               `[context-overflow-precheck] sessionKey=${params.sessionKey ?? params.sessionId} ` +
                 `provider=${params.provider}/${params.modelId} ` +
@@ -2614,6 +2620,17 @@ export async function runEmbeddedAttempt(
           } else {
             promptError = err;
             promptErrorSource = "prompt";
+            if (
+              err instanceof Error &&
+              err.message === PREEMPTIVE_CONTEXT_OVERFLOW_MESSAGE &&
+              estimatedContextTokens === undefined
+            ) {
+              estimatedContextTokens = estimatePrePromptTokens({
+                messages: activeSession.messages,
+                systemPrompt: systemPromptText,
+                prompt: effectivePrompt,
+              });
+            }
           }
         } finally {
           log.debug(
@@ -3061,6 +3078,7 @@ export async function runEmbeddedAttempt(
         promptError,
         promptErrorSource,
         preflightRecovery,
+        estimatedContextTokens,
         sessionIdUsed,
         diagnosticTrace,
         bootstrapPromptWarningSignaturesSeen: bootstrapPromptWarning.warningSignaturesSeen,

@@ -358,6 +358,34 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
+  it("forwards attempt-estimated context tokens into overflow compaction when provider counts are unavailable", async () => {
+    mockedRunEmbeddedAttempt
+      .mockResolvedValueOnce(
+        makeAttemptResult({
+          promptError: makeOverflowError(
+            "Context overflow: prompt too large for the model (precheck).",
+          ),
+          estimatedContextTokens: 211234,
+        }),
+      )
+      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    mockedCompactDirect.mockResolvedValueOnce(
+      makeCompactionSuccess({
+        summary: "Compacted after local overflow estimate",
+        firstKeptEntryId: "entry-9",
+        tokensBefore: 211234,
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent(baseParams);
+
+    expect(mockedCompactDirect).toHaveBeenCalledWith(
+      expect.objectContaining({ currentTokenCount: 211234 }),
+    );
+    expect(result.meta.error).toBeUndefined();
+  });
+
   it("retries compaction up to 3 times before giving up", async () => {
     const overflowError = makeOverflowError();
 
