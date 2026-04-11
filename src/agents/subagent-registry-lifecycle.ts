@@ -34,7 +34,7 @@ import {
   resolveAnnounceRetryDelayMs,
   safeRemoveAttachmentsDir,
 } from "./subagent-registry-helpers.js";
-import type { SubagentRunRecord } from "./subagent-registry.types.js";
+import type { PendingFinalDeliveryPayload, SubagentRunRecord } from "./subagent-registry.types.js";
 
 export function createSubagentRegistryLifecycleController(params: {
   runs: Map<string, SubagentRunRecord>;
@@ -251,6 +251,7 @@ export function createSubagentRegistryLifecycleController(params: {
     entry: SubagentRunRecord;
     reason: "retry-limit" | "expiry";
   }) => {
+    clearPendingFinalDelivery(giveUpParams.entry);
     safeSetSubagentTaskDeliveryStatus({
       runId: giveUpParams.runId,
       childSessionKey: giveUpParams.entry.childSessionKey,
@@ -330,6 +331,58 @@ export function createSubagentRegistryLifecycleController(params: {
     }
   };
 
+  const clearPendingFinalDelivery = (entry: SubagentRunRecord) => {
+    entry.pendingFinalDelivery = undefined;
+    entry.pendingFinalDeliveryCreatedAt = undefined;
+    entry.pendingFinalDeliveryLastAttemptAt = undefined;
+    entry.pendingFinalDeliveryAttemptCount = undefined;
+    entry.pendingFinalDeliveryLastError = undefined;
+    entry.pendingFinalDeliveryPayload = undefined;
+  };
+
+  const loadPendingFinalDeliveryPayload = (
+    entry: SubagentRunRecord,
+  ): PendingFinalDeliveryPayload => {
+    return {
+      requesterSessionKey:
+        entry.pendingFinalDeliveryPayload?.requesterSessionKey ?? entry.requesterSessionKey,
+      requesterOrigin: entry.pendingFinalDeliveryPayload?.requesterOrigin ?? entry.requesterOrigin,
+      requesterDisplayKey:
+        entry.pendingFinalDeliveryPayload?.requesterDisplayKey ?? entry.requesterDisplayKey,
+      childSessionKey: entry.pendingFinalDeliveryPayload?.childSessionKey ?? entry.childSessionKey,
+      childRunId: entry.pendingFinalDeliveryPayload?.childRunId ?? entry.runId,
+      task: entry.pendingFinalDeliveryPayload?.task ?? entry.task,
+      label: entry.pendingFinalDeliveryPayload?.label ?? entry.label,
+      startedAt: entry.pendingFinalDeliveryPayload?.startedAt ?? entry.startedAt,
+      endedAt: entry.pendingFinalDeliveryPayload?.endedAt ?? entry.endedAt,
+      outcome: entry.pendingFinalDeliveryPayload?.outcome ?? entry.outcome,
+      expectsCompletionMessage:
+        entry.pendingFinalDeliveryPayload?.expectsCompletionMessage ??
+        entry.expectsCompletionMessage,
+      spawnMode: entry.pendingFinalDeliveryPayload?.spawnMode ?? entry.spawnMode,
+      frozenResultText:
+        entry.pendingFinalDeliveryPayload?.frozenResultText ?? entry.frozenResultText,
+      fallbackFrozenResultText:
+        entry.pendingFinalDeliveryPayload?.fallbackFrozenResultText ??
+        entry.fallbackFrozenResultText,
+      wakeOnDescendantSettle:
+        entry.pendingFinalDeliveryPayload?.wakeOnDescendantSettle ?? entry.wakeOnDescendantSettle,
+    };
+  };
+
+  const markPendingFinalDelivery = (args: { entry: SubagentRunRecord; error?: string }) => {
+    const now = Date.now();
+    const payload: PendingFinalDeliveryPayload = loadPendingFinalDeliveryPayload(args.entry);
+
+    args.entry.pendingFinalDelivery = true;
+    args.entry.pendingFinalDeliveryCreatedAt ??= now;
+    args.entry.pendingFinalDeliveryLastAttemptAt = now;
+    args.entry.pendingFinalDeliveryAttemptCount =
+      (args.entry.pendingFinalDeliveryAttemptCount ?? 0) + 1;
+    args.entry.pendingFinalDeliveryLastError = args.error ?? null;
+    args.entry.pendingFinalDeliveryPayload = payload;
+  };
+
   const completeCleanupBookkeeping = (cleanupParams: {
     runId: string;
     entry: SubagentRunRecord;
@@ -375,6 +428,7 @@ export function createSubagentRegistryLifecycleController(params: {
         entry.completionAnnouncedAt = Date.now();
         params.persist();
       }
+      clearPendingFinalDelivery(entry);
       safeSetSubagentTaskDeliveryStatus({
         runId,
         childSessionKey: entry.childSessionKey,
@@ -432,6 +486,7 @@ export function createSubagentRegistryLifecycleController(params: {
     }
 
     if (deferredDecision.kind === "give-up") {
+      clearPendingFinalDelivery(entry);
       safeSetSubagentTaskDeliveryStatus({
         runId,
         childSessionKey: entry.childSessionKey,
@@ -456,6 +511,10 @@ export function createSubagentRegistryLifecycleController(params: {
       return;
     }
 
+    markPendingFinalDelivery({
+      entry,
+      error: didAnnounce ? undefined : "announce deferred or direct delivery failed",
+    });
     entry.cleanupHandled = false;
     params.resumedRuns.delete(runId);
     params.persist();
@@ -488,7 +547,8 @@ export function createSubagentRegistryLifecycleController(params: {
     if (!beginSubagentCleanup(runId)) {
       return false;
     }
-    const requesterOrigin = normalizeDeliveryContext(entry.requesterOrigin);
+    const pendingPayload = loadPendingFinalDeliveryPayload(entry);
+    const requesterOrigin = normalizeDeliveryContext(pendingPayload.requesterOrigin);
     const finalizeAnnounceCleanup = (didAnnounce: boolean) => {
       void finalizeSubagentCleanup(runId, entry.cleanup, didAnnounce).catch((err) => {
         defaultRuntime.log(`[warn] subagent cleanup finalize failed (${runId}): ${String(err)}`);
@@ -503,24 +563,24 @@ export function createSubagentRegistryLifecycleController(params: {
 
     void params
       .runSubagentAnnounceFlow({
-        childSessionKey: entry.childSessionKey,
-        childRunId: entry.runId,
-        requesterSessionKey: entry.requesterSessionKey,
+        childSessionKey: pendingPayload.childSessionKey,
+        childRunId: pendingPayload.childRunId,
+        requesterSessionKey: pendingPayload.requesterSessionKey,
         requesterOrigin,
-        requesterDisplayKey: entry.requesterDisplayKey,
-        task: entry.task,
+        requesterDisplayKey: pendingPayload.requesterDisplayKey,
+        task: pendingPayload.task,
         timeoutMs: params.subagentAnnounceTimeoutMs,
         cleanup: entry.cleanup,
-        roundOneReply: entry.frozenResultText ?? undefined,
-        fallbackReply: entry.fallbackFrozenResultText ?? undefined,
+        roundOneReply: pendingPayload.frozenResultText ?? undefined,
+        fallbackReply: pendingPayload.fallbackFrozenResultText ?? undefined,
         waitForCompletion: false,
-        startedAt: entry.startedAt,
-        endedAt: entry.endedAt,
-        label: entry.label,
-        outcome: entry.outcome,
-        spawnMode: entry.spawnMode,
-        expectsCompletionMessage: entry.expectsCompletionMessage,
-        wakeOnDescendantSettle: entry.wakeOnDescendantSettle === true,
+        startedAt: pendingPayload.startedAt,
+        endedAt: pendingPayload.endedAt,
+        label: pendingPayload.label,
+        outcome: pendingPayload.outcome,
+        spawnMode: pendingPayload.spawnMode,
+        expectsCompletionMessage: pendingPayload.expectsCompletionMessage,
+        wakeOnDescendantSettle: pendingPayload.wakeOnDescendantSettle === true,
       })
       .then((didAnnounce) => {
         finalizeAnnounceCleanup(didAnnounce);

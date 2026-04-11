@@ -251,6 +251,136 @@ describe("subagent registry lifecycle hardening", () => {
     );
   });
 
+  it("reuses durable pending final delivery payload on resumed cleanup retries", async () => {
+    const persist = vi.fn();
+    const entry = createRunEntry({
+      runId: "run-resume-pending",
+      requesterSessionKey: "agent:main:main",
+      requesterDisplayKey: "main",
+      task: "stale live task should not be reused",
+      label: "stale live label",
+      startedAt: 2_000,
+      endedAt: 4_000,
+      outcome: { status: "timeout" },
+      expectsCompletionMessage: true,
+      pendingFinalDelivery: true,
+      pendingFinalDeliveryCreatedAt: 3_900,
+      pendingFinalDeliveryLastAttemptAt: 3_950,
+      pendingFinalDeliveryAttemptCount: 1,
+      pendingFinalDeliveryLastError: "direct failed",
+      pendingFinalDeliveryPayload: {
+        requesterSessionKey: "agent:main:restored-parent",
+        requesterOrigin: { channel: "whatsapp", to: "+905000000000", accountId: "acct-r" },
+        requesterDisplayKey: "restored-parent",
+        childSessionKey: "agent:main:subagent:child",
+        childRunId: "run-resume-pending",
+        task: "restored durable task",
+        label: "restored durable label",
+        startedAt: 123,
+        endedAt: 456,
+        outcome: { status: "ok" },
+        expectsCompletionMessage: true,
+        spawnMode: "run",
+        frozenResultText: "durable frozen reply",
+        fallbackFrozenResultText: "durable fallback reply",
+        wakeOnDescendantSettle: true,
+      },
+    });
+    const runSubagentAnnounceFlow = vi.fn(async () => false);
+
+    const controller = createSubagentRegistryLifecycleController({
+      runs: new Map([[entry.runId, entry]]),
+      resumedRuns: new Set(),
+      subagentAnnounceTimeoutMs: 1_000,
+      persist,
+      clearPendingLifecycleError: vi.fn(),
+      countPendingDescendantRuns: () => 0,
+      suppressAnnounceForSteerRestart: () => false,
+      shouldEmitEndedHookForRun: () => false,
+      emitSubagentEndedHookForRun: vi.fn(async () => {}),
+      notifyContextEngineSubagentEnded: vi.fn(async () => {}),
+      resumeSubagentRun: vi.fn(),
+      captureSubagentCompletionReply: vi.fn(async () => undefined),
+      runSubagentAnnounceFlow,
+      warn: vi.fn(),
+    });
+
+    expect(controller.startSubagentAnnounceCleanupFlow(entry.runId, entry)).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runSubagentAnnounceFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        childSessionKey: "agent:main:subagent:child",
+        childRunId: "run-resume-pending",
+        requesterSessionKey: "agent:main:restored-parent",
+        requesterOrigin: { channel: "whatsapp", to: "+905000000000", accountId: "acct-r" },
+        requesterDisplayKey: "restored-parent",
+        task: "restored durable task",
+        label: "restored durable label",
+        roundOneReply: "durable frozen reply",
+        fallbackReply: "durable fallback reply",
+        startedAt: 123,
+        endedAt: 456,
+        outcome: { status: "ok" },
+        expectsCompletionMessage: true,
+        wakeOnDescendantSettle: true,
+      }),
+    );
+  });
+
+  it("clears pending final delivery state when give-up finalization runs", async () => {
+    const persist = vi.fn();
+    const entry = createRunEntry({
+      endedAt: 4_000,
+      expectsCompletionMessage: false,
+      pendingFinalDelivery: true,
+      pendingFinalDeliveryCreatedAt: 3_900,
+      pendingFinalDeliveryLastAttemptAt: 3_950,
+      pendingFinalDeliveryAttemptCount: 2,
+      pendingFinalDeliveryLastError: "resume delivery deferred",
+      pendingFinalDeliveryPayload: {
+        requesterSessionKey: "agent:main:main",
+        requesterDisplayKey: "main",
+        childSessionKey: "agent:main:subagent:child",
+        childRunId: "run-1",
+        task: "finish the task",
+      },
+    });
+
+    const controller = createSubagentRegistryLifecycleController({
+      runs: new Map([[entry.runId, entry]]),
+      resumedRuns: new Set(),
+      subagentAnnounceTimeoutMs: 1_000,
+      persist,
+      clearPendingLifecycleError: vi.fn(),
+      countPendingDescendantRuns: () => 0,
+      suppressAnnounceForSteerRestart: () => false,
+      shouldEmitEndedHookForRun: () => false,
+      emitSubagentEndedHookForRun: vi.fn(async () => {}),
+      notifyContextEngineSubagentEnded: vi.fn(async () => {}),
+      resumeSubagentRun: vi.fn(),
+      captureSubagentCompletionReply: vi.fn(async () => undefined),
+      runSubagentAnnounceFlow: vi.fn(async () => true),
+      warn: vi.fn(),
+    });
+
+    await expect(
+      controller.finalizeResumedAnnounceGiveUp({
+        runId: entry.runId,
+        entry,
+        reason: "retry-limit",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(entry.pendingFinalDelivery).toBeUndefined();
+    expect(entry.pendingFinalDeliveryCreatedAt).toBeUndefined();
+    expect(entry.pendingFinalDeliveryLastAttemptAt).toBeUndefined();
+    expect(entry.pendingFinalDeliveryAttemptCount).toBeUndefined();
+    expect(entry.pendingFinalDeliveryLastError).toBeUndefined();
+    expect(entry.pendingFinalDeliveryPayload).toBeUndefined();
+  });
+
   it("does not wait for a completion reply when the run does not expect one", async () => {
     const entry = createRunEntry({
       expectsCompletionMessage: false,

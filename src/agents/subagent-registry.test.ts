@@ -242,11 +242,23 @@ describe("subagent registry seam flow", () => {
 
     await vi.advanceTimersByTimeAsync(0);
     expect(mocks.runSubagentAnnounceFlow).toHaveBeenCalledTimes(1);
-    expect(
-      mod
-        .listSubagentRunsForRequester("agent:main:main")
-        .find((entry) => entry.runId === "run-delete-give-up"),
-    ).toBeDefined();
+    const firstPendingEntry = mod
+      .listSubagentRunsForRequester("agent:main:main")
+      .find((entry) => entry.runId === "run-delete-give-up");
+    expect(firstPendingEntry).toBeDefined();
+    expect(firstPendingEntry).toMatchObject({
+      pendingFinalDelivery: true,
+      pendingFinalDeliveryLastError: "announce deferred or direct delivery failed",
+    });
+    expect(firstPendingEntry?.pendingFinalDeliveryPayload).toMatchObject({
+      requesterSessionKey: "agent:main:main",
+      requesterDisplayKey: "main",
+      childSessionKey: "agent:main:subagent:child",
+      childRunId: "run-delete-give-up",
+      task: "completion cleanup retry",
+      expectsCompletionMessage: true,
+      frozenResultText: "final completion reply",
+    });
 
     await vi.advanceTimersByTimeAsync(1_000);
     expect(mocks.runSubagentAnnounceFlow).toHaveBeenCalledTimes(2);

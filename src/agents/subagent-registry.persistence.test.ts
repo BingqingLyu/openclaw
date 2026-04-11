@@ -428,6 +428,87 @@ describe("subagent registry persistence", () => {
     expect(afterSecond.runs["run-3"].cleanupCompletedAt).toBeDefined();
   });
 
+  it("reuses durable pending final delivery payload across restart cleanup", async () => {
+    const now = Date.now();
+    const registryPath = await writePersistedRegistry({
+      version: 2,
+      runs: {
+        "run-pending": {
+          runId: "run-pending",
+          childSessionKey: "agent:main:subagent:live-child",
+          requesterSessionKey: "agent:main:live-parent",
+          requesterDisplayKey: "live-parent",
+          task: "stale live task",
+          cleanup: "keep",
+          createdAt: now - 3_000,
+          startedAt: now - 2_000,
+          endedAt: now - 1_000,
+          cleanupHandled: false,
+          expectsCompletionMessage: true,
+          pendingFinalDelivery: true,
+          pendingFinalDeliveryCreatedAt: now - 1_000,
+          pendingFinalDeliveryLastAttemptAt: now - 500,
+          pendingFinalDeliveryAttemptCount: 1,
+          pendingFinalDeliveryLastError: "announce deferred or direct delivery failed",
+          pendingFinalDeliveryPayload: {
+            requesterSessionKey: "agent:main:restored-parent",
+            requesterOrigin: {
+              channel: "whatsapp",
+              to: "+905000000000",
+              accountId: "acct-restored",
+            },
+            requesterDisplayKey: "restored-parent",
+            childSessionKey: "agent:main:subagent:restored-child",
+            childRunId: "run-pending",
+            task: "restored durable task",
+            label: "restored durable label",
+            startedAt: now - 2_000,
+            endedAt: now - 1_000,
+            outcome: { status: "ok" },
+            expectsCompletionMessage: true,
+            spawnMode: "run",
+            frozenResultText: "durable frozen reply",
+            fallbackFrozenResultText: "durable fallback reply",
+          },
+        },
+      },
+    });
+
+    announceSpy.mockResolvedValueOnce(true);
+    await restartRegistryAndFlush();
+
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+    expect(announceSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        childSessionKey: "agent:main:subagent:restored-child",
+        childRunId: "run-pending",
+        requesterSessionKey: "agent:main:restored-parent",
+        requesterOrigin: {
+          channel: "whatsapp",
+          to: "+905000000000",
+          accountId: "acct-restored",
+        },
+        requesterDisplayKey: "restored-parent",
+        task: "restored durable task",
+        label: "restored durable label",
+        roundOneReply: "durable frozen reply",
+        fallbackReply: "durable fallback reply",
+        outcome: { status: "ok" },
+        expectsCompletionMessage: true,
+      }),
+    );
+
+    const after = await readPersistedRun<{
+      cleanupCompletedAt?: number;
+      pendingFinalDelivery?: boolean;
+      pendingFinalDeliveryPayload?: unknown;
+    }>(registryPath, "run-pending");
+    expect(after?.cleanupCompletedAt).toBeDefined();
+    expect(after?.pendingFinalDelivery).toBeUndefined();
+    expect(after?.pendingFinalDeliveryPayload).toBeUndefined();
+  });
+
   it("retries cleanup announce after announce flow rejects", async () => {
     const persisted = createPersistedEndedRun({
       runId: "run-reject",

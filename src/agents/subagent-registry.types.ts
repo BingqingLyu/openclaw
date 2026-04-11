@@ -3,6 +3,24 @@ import type { SubagentRunOutcome } from "./subagent-announce-output.js";
 import type { SubagentLifecycleEndedReason } from "./subagent-lifecycle-events.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.types.js";
 
+export type PendingFinalDeliveryPayload = {
+  requesterSessionKey: string;
+  requesterOrigin?: DeliveryContext;
+  requesterDisplayKey: string;
+  childSessionKey: string;
+  childRunId: string;
+  task: string;
+  label?: string;
+  startedAt?: number;
+  endedAt?: number;
+  outcome?: SubagentRunOutcome;
+  expectsCompletionMessage?: boolean;
+  spawnMode?: SpawnSubagentMode;
+  frozenResultText?: string | null;
+  fallbackFrozenResultText?: string | null;
+  wakeOnDescendantSettle?: boolean;
+};
+
 export type SubagentRunRecord = {
   runId: string;
   childSessionKey: string;
@@ -38,6 +56,13 @@ export type SubagentRunRecord = {
   fallbackFrozenResultCapturedAt?: number;
   endedHookEmittedAt?: number;
   completionAnnouncedAt?: number;
+  /** Durable marker that final user delivery still needs a retry/resume pass. */
+  pendingFinalDelivery?: boolean;
+  pendingFinalDeliveryCreatedAt?: number;
+  pendingFinalDeliveryLastAttemptAt?: number;
+  pendingFinalDeliveryAttemptCount?: number;
+  pendingFinalDeliveryLastError?: string | null;
+  pendingFinalDeliveryPayload?: PendingFinalDeliveryPayload;
   attachmentsDir?: string;
   attachmentsRootDir?: string;
   retainAttachmentsOnKeep?: boolean;
