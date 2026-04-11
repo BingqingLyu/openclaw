@@ -267,7 +267,7 @@ describe("buildWorkspaceSkillSnapshot", () => {
     expect(snapshot.prompt).not.toContain("openclaw skills list");
   });
 
-  it("keeps omitted skill names raw and line-separated for skills info lookups", async () => {
+  it("escapes omitted skill names before listing them in the truncation note", async () => {
     const workspaceDir = await fixtureSuite.createCaseDir("workspace");
     await writeSkill({
       dir: path.join(workspaceDir, "skills", "alpha-skill"),
@@ -305,11 +305,11 @@ describe("buildWorkspaceSkillSnapshot", () => {
       }),
     );
 
-    expect(snapshot.prompt).toContain("- skill-<xml>");
-    expect(snapshot.prompt).toContain("- skill-&-tail");
+    expect(snapshot.prompt).toContain("- skill-&lt;xml&gt;");
+    expect(snapshot.prompt).toContain("- skill-&amp;-tail");
     expect(snapshot.prompt).toContain("- skill,comma");
-    expect(snapshot.prompt).not.toContain("skill-&lt;xml&gt;");
-    expect(snapshot.prompt).not.toContain("skill-&amp;-tail");
+    expect(snapshot.prompt).not.toContain("- skill-<xml>");
+    expect(snapshot.prompt).not.toContain("- skill-&-tail");
   });
 
   it("reports the remaining omitted skill count when the truncation note hits its budget", async () => {

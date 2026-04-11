@@ -788,7 +788,7 @@ function formatTruncatedSkillLines(skills: Skill[], maxChars: number): string[] 
   const included: string[] = [];
 
   for (const [index, skill] of skills.entries()) {
-    const nextLine = `- ${skill.name}`;
+    const nextLine = `- ${escapeXml(skill.name)}`;
     const remaining = skills.length - (index + 1);
     const candidateLines = [...included, nextLine];
     const candidateWithSummary =
