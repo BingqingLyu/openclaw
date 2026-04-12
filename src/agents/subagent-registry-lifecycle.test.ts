@@ -329,6 +329,85 @@ describe("subagent registry lifecycle hardening", () => {
     );
   });
 
+  it("ignores stale pending final delivery payload when it belongs to a different run", async () => {
+    const persist = vi.fn();
+    const entry = createRunEntry({
+      runId: "run-current",
+      childSessionKey: "agent:main:subagent:current-child",
+      requesterSessionKey: "agent:main:current-parent",
+      requesterDisplayKey: "current-parent",
+      task: "current task",
+      label: "current label",
+      startedAt: 2_000,
+      endedAt: 4_000,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      pendingFinalDelivery: true,
+      pendingFinalDeliveryCreatedAt: 3_900,
+      pendingFinalDeliveryLastAttemptAt: 3_950,
+      pendingFinalDeliveryAttemptCount: 1,
+      pendingFinalDeliveryLastError: "direct failed",
+      pendingFinalDeliveryPayload: {
+        requesterSessionKey: "agent:main:stale-parent",
+        requesterOrigin: { channel: "whatsapp", to: "+905000000000", accountId: "acct-stale" },
+        requesterDisplayKey: "stale-parent",
+        childSessionKey: "agent:main:subagent:stale-child",
+        childRunId: "run-stale",
+        task: "stale durable task",
+        label: "stale durable label",
+        startedAt: 123,
+        endedAt: 456,
+        outcome: { status: "error", error: "stale" },
+        expectsCompletionMessage: false,
+        spawnMode: "run",
+        frozenResultText: "stale frozen reply",
+        fallbackFrozenResultText: "stale fallback reply",
+        wakeOnDescendantSettle: true,
+      },
+    });
+    const runSubagentAnnounceFlow = vi.fn(async () => false);
+
+    const controller = createSubagentRegistryLifecycleController({
+      runs: new Map([[entry.runId, entry]]),
+      resumedRuns: new Set(),
+      subagentAnnounceTimeoutMs: 1_000,
+      persist,
+      clearPendingLifecycleError: vi.fn(),
+      countPendingDescendantRuns: () => 0,
+      suppressAnnounceForSteerRestart: () => false,
+      shouldEmitEndedHookForRun: () => false,
+      emitSubagentEndedHookForRun: vi.fn(async () => {}),
+      notifyContextEngineSubagentEnded: vi.fn(async () => {}),
+      resumeSubagentRun: vi.fn(),
+      captureSubagentCompletionReply: vi.fn(async () => undefined),
+      runSubagentAnnounceFlow,
+      warn: vi.fn(),
+    });
+
+    expect(controller.startSubagentAnnounceCleanupFlow(entry.runId, entry)).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runSubagentAnnounceFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        childSessionKey: "agent:main:subagent:current-child",
+        childRunId: "run-current",
+        requesterSessionKey: "agent:main:current-parent",
+        requesterOrigin: "agent",
+        requesterDisplayKey: "current-parent",
+        task: "current task",
+        label: "current label",
+        startedAt: 2_000,
+        endedAt: 4_000,
+        outcome: { status: "ok" },
+        expectsCompletionMessage: true,
+        roundOneReply: undefined,
+        fallbackReply: undefined,
+        wakeOnDescendantSettle: false,
+      }),
+    );
+  });
+
   it("clears pending final delivery state when give-up finalization runs", async () => {
     const persist = vi.fn();
     const entry = createRunEntry({

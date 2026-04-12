@@ -343,30 +343,30 @@ export function createSubagentRegistryLifecycleController(params: {
   const loadPendingFinalDeliveryPayload = (
     entry: SubagentRunRecord,
   ): PendingFinalDeliveryPayload => {
+    const pendingPayload =
+      entry.pendingFinalDeliveryPayload?.childRunId === entry.runId
+        ? entry.pendingFinalDeliveryPayload
+        : undefined;
+
     return {
-      requesterSessionKey:
-        entry.pendingFinalDeliveryPayload?.requesterSessionKey ?? entry.requesterSessionKey,
-      requesterOrigin: entry.pendingFinalDeliveryPayload?.requesterOrigin ?? entry.requesterOrigin,
-      requesterDisplayKey:
-        entry.pendingFinalDeliveryPayload?.requesterDisplayKey ?? entry.requesterDisplayKey,
-      childSessionKey: entry.pendingFinalDeliveryPayload?.childSessionKey ?? entry.childSessionKey,
-      childRunId: entry.pendingFinalDeliveryPayload?.childRunId ?? entry.runId,
-      task: entry.pendingFinalDeliveryPayload?.task ?? entry.task,
-      label: entry.pendingFinalDeliveryPayload?.label ?? entry.label,
-      startedAt: entry.pendingFinalDeliveryPayload?.startedAt ?? entry.startedAt,
-      endedAt: entry.pendingFinalDeliveryPayload?.endedAt ?? entry.endedAt,
-      outcome: entry.pendingFinalDeliveryPayload?.outcome ?? entry.outcome,
+      requesterSessionKey: pendingPayload?.requesterSessionKey ?? entry.requesterSessionKey,
+      requesterOrigin: pendingPayload?.requesterOrigin ?? entry.requesterOrigin,
+      requesterDisplayKey: pendingPayload?.requesterDisplayKey ?? entry.requesterDisplayKey,
+      childSessionKey: pendingPayload?.childSessionKey ?? entry.childSessionKey,
+      childRunId: pendingPayload?.childRunId ?? entry.runId,
+      task: pendingPayload?.task ?? entry.task,
+      label: pendingPayload?.label ?? entry.label,
+      startedAt: pendingPayload?.startedAt ?? entry.startedAt,
+      endedAt: pendingPayload?.endedAt ?? entry.endedAt,
+      outcome: pendingPayload?.outcome ?? entry.outcome,
       expectsCompletionMessage:
-        entry.pendingFinalDeliveryPayload?.expectsCompletionMessage ??
-        entry.expectsCompletionMessage,
-      spawnMode: entry.pendingFinalDeliveryPayload?.spawnMode ?? entry.spawnMode,
-      frozenResultText:
-        entry.pendingFinalDeliveryPayload?.frozenResultText ?? entry.frozenResultText,
+        pendingPayload?.expectsCompletionMessage ?? entry.expectsCompletionMessage,
+      spawnMode: pendingPayload?.spawnMode ?? entry.spawnMode,
+      frozenResultText: pendingPayload?.frozenResultText ?? entry.frozenResultText,
       fallbackFrozenResultText:
-        entry.pendingFinalDeliveryPayload?.fallbackFrozenResultText ??
-        entry.fallbackFrozenResultText,
+        pendingPayload?.fallbackFrozenResultText ?? entry.fallbackFrozenResultText,
       wakeOnDescendantSettle:
-        entry.pendingFinalDeliveryPayload?.wakeOnDescendantSettle ?? entry.wakeOnDescendantSettle,
+        pendingPayload?.wakeOnDescendantSettle ?? entry.wakeOnDescendantSettle,
     };
   };
 

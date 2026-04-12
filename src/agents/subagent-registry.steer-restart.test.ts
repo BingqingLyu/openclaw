@@ -376,6 +376,46 @@ describe("subagent registry steer restarts", () => {
     });
   });
 
+  it("clears pending final delivery state when replacing after steer restart", async () => {
+    await withPendingAgentWait(async () => {
+      registerRun({
+        runId: "run-pending-old",
+        childSessionKey: "agent:main:subagent:pending-reset",
+        task: "pending reset",
+      });
+
+      const previous = listMainRuns()[0];
+      expect(previous?.runId).toBe("run-pending-old");
+      if (previous) {
+        previous.pendingFinalDelivery = true;
+        previous.pendingFinalDeliveryCreatedAt = Date.now() - 100;
+        previous.pendingFinalDeliveryLastAttemptAt = Date.now();
+        previous.pendingFinalDeliveryAttemptCount = 2;
+        previous.pendingFinalDeliveryLastError = "announce failed";
+        previous.pendingFinalDeliveryPayload = {
+          requesterSessionKey: "agent:main:old-parent",
+          requesterDisplayKey: "old-parent",
+          childSessionKey: previous.childSessionKey,
+          childRunId: previous.runId,
+          task: "old pending task",
+        };
+      }
+
+      const run = replaceRunAfterSteer({
+        previousRunId: "run-pending-old",
+        nextRunId: "run-pending-new",
+        fallback: previous,
+      });
+
+      expect(run.pendingFinalDelivery).toBeUndefined();
+      expect(run.pendingFinalDeliveryCreatedAt).toBeUndefined();
+      expect(run.pendingFinalDeliveryLastAttemptAt).toBeUndefined();
+      expect(run.pendingFinalDeliveryAttemptCount).toBeUndefined();
+      expect(run.pendingFinalDeliveryLastError).toBeUndefined();
+      expect(run.pendingFinalDeliveryPayload).toBeUndefined();
+    });
+  });
+
   it("clears terminal lifecycle state when replacing after steer restart", async () => {
     await withPendingAgentWait(async () => {
       registerRun({
