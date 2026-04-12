@@ -1323,3 +1323,20 @@ describe("createFollowupRunner agentDir forwarding", () => {
     expect(call?.agentDir).toBe(agentDir);
   });
 });
+
+describe("createFollowupRunner failure handling", () => {
+  it("re-throws interrupt-like errors to prevent dropping the followup run", async () => {
+    const error = new Error("This operation was aborted");
+    error.name = "AbortError";
+    runEmbeddedPiAgentMock.mockRejectedValueOnce(error);
+
+    const runner = createFollowupRunner({
+      typing: createMockTypingController(),
+      typingMode: "instant",
+      defaultModel: "anthropic/claude-opus-4-6",
+    });
+
+    const queued = baseQueuedRun();
+    await expect(runner(queued)).rejects.toThrow("This operation was aborted");
+  });
+});
