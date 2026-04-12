@@ -362,9 +362,9 @@ export function createSubagentRegistryLifecycleController(params: {
       expectsCompletionMessage:
         pendingPayload?.expectsCompletionMessage ?? entry.expectsCompletionMessage,
       spawnMode: pendingPayload?.spawnMode ?? entry.spawnMode,
-      frozenResultText: pendingPayload?.frozenResultText ?? entry.frozenResultText,
+      frozenResultText: entry.frozenResultText ?? pendingPayload?.frozenResultText,
       fallbackFrozenResultText:
-        pendingPayload?.fallbackFrozenResultText ?? entry.fallbackFrozenResultText,
+        entry.fallbackFrozenResultText ?? pendingPayload?.fallbackFrozenResultText,
       wakeOnDescendantSettle:
         pendingPayload?.wakeOnDescendantSettle ?? entry.wakeOnDescendantSettle,
     };
