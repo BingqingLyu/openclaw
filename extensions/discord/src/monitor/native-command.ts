@@ -15,7 +15,6 @@ import { resolveHumanDelayConfig } from "openclaw/plugin-sdk/agent-runtime";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import { resolveChannelStreamingBlockEnabled } from "openclaw/plugin-sdk/channel-streaming";
 import {
-  resolveCommandAuthorization,
   resolveCommandAuthorizedFromAuthorizers,
   resolveNativeCommandSessionTargets,
 } from "openclaw/plugin-sdk/command-auth-native";
@@ -26,7 +25,6 @@ import { getAgentScopedMediaLocalRoots } from "openclaw/plugin-sdk/media-runtime
 import {
   buildCommandTextFromArgs,
   findCommandByNativeName,
-  listChatCommands,
   parseCommandArgs,
   resolveCommandArgChoices,
   resolveCommandArgMenu,
@@ -1153,22 +1151,6 @@ async function dispatchDiscordCommandInteraction(params: {
     sender: { id: sender.id, name: sender.name, tag: sender.tag },
   });
 
-  const resolvedCommandAuth = resolveCommandAuthorization({
-    ctx: ctxPayload,
-    cfg,
-    commandAuthorized,
-  });
-  const nativeCommandName = command.nativeName ?? command.key;
-  const isBuiltinCommand = listChatCommands().some((entry) => entry.key === command.key);
-  const hasExplicitCommandsAllowFrom = Boolean(
-    cfg.commands?.allowFrom && typeof cfg.commands.allowFrom === "object",
-  );
-  const canBypassSharedAuthMismatch =
-    commandAuthorized &&
-    !hasExplicitCommandsAllowFrom &&
-    (shouldBypassConfiguredAcpEnsure(nativeCommandName) ||
-      shouldBypassConfiguredAcpGuildGuards(nativeCommandName));
-
   const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({
     cfg,
     agentId: effectiveRoute.agentId,
@@ -1179,14 +1161,6 @@ async function dispatchDiscordCommandInteraction(params: {
   const blockStreamingEnabled = resolveChannelStreamingBlockEnabled(discordConfig);
 
   let didReply = false;
-  if (isBuiltinCommand && !resolvedCommandAuth.isAuthorizedSender && !canBypassSharedAuthMismatch) {
-    log.warn(
-      `discord native command auth mismatch command=${command.key} user=${sender.id} channel=${channelId} session=${commandTargetSessionKey ?? sessionKey ?? "unknown"} nativeAuthorized=${commandAuthorized} sharedAuthorized=${resolvedCommandAuth.isAuthorizedSender}`,
-    );
-    await respond("You are not authorized to use this command.", { ephemeral: true });
-    return;
-  }
-
   const dispatchResult = await dispatchReplyWithDispatcherImpl({
     ctx: ctxPayload,
     cfg,
