@@ -1456,7 +1456,15 @@ export function createExecTool(
       const configuredSecurity =
         defaults?.security ?? approvalDefaults?.security ?? (host === "sandbox" ? "deny" : "full");
       const requestedSecurity = normalizeExecSecurity(params.security);
-      let security = minSecurity(configuredSecurity, requestedSecurity ?? configuredSecurity);
+      // When configuredSecurity is "full", a model-supplied security argument must not
+      // downgrade it. Codex models (gpt-5.4-mini etc.) routinely pass security:"allowlist"
+      // in their tool call arguments regardless of the agent's configured policy, which
+      // causes allowlist-miss errors on agents that are explicitly granted full exec access.
+      // Treating "full" as a hard floor preserves the intent of tools.exec.security="full".
+      let security =
+        configuredSecurity === "full"
+          ? "full"
+          : minSecurity(configuredSecurity, requestedSecurity ?? configuredSecurity);
       if (elevatedRequested && elevatedMode === "full") {
         security = "full";
       }
