@@ -1,14 +1,14 @@
 /**
- * Tests that a model-supplied security:"allowlist" argument cannot downgrade
- * an agent configured with tools.exec.security="full".
+ * Tests that a model-supplied security argument cannot downgrade the operator's
+ * configured exec security policy. configuredSecurity is always the floor.
  *
  * Regression test for: Codex models (gpt-5.4-mini etc.) routinely pass
- * security:"allowlist" in their exec tool call arguments. Before this fix,
- * minSecurity("full", "allowlist") = "allowlist", causing allowlist-miss errors
- * on agents that are explicitly granted full exec access via config.
+ * security:"allowlist" or security:"deny" in their exec tool call arguments.
+ * Before this fix, minSecurity(configuredSecurity, requestedSecurity) would
+ * let the model's arg win, causing unexpected denials or policy bypass.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { captureEnv } from "../test-utils/env.js";
 import { resetProcessRegistryForTests } from "./bash-process-registry.js";
 import { createExecTool } from "./bash-tools.exec.js";
@@ -19,11 +19,10 @@ const defaultShell = isWin
   ? undefined
   : process.env.OPENCLAW_TEST_SHELL || resolveShellFromPath("bash") || process.env.SHELL || "sh";
 
-describe("exec security floor: configured full cannot be downgraded by model", () => {
+describe("exec security floor: configuredSecurity is always the operator floor", () => {
   let envSnapshot: ReturnType<typeof captureEnv>;
 
   beforeEach(() => {
-    vi.useRealTimers();
     envSnapshot = captureEnv(["SHELL"]);
     if (!isWin && defaultShell) {
       process.env.SHELL = defaultShell;
@@ -32,23 +31,20 @@ describe("exec security floor: configured full cannot be downgraded by model", (
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     envSnapshot.restore();
   });
 
-  it("executes successfully when configured security=full and model passes security=allowlist", async () => {
-    // Simulates a Codex model calling exec with security:"allowlist" on an agent
-    // that has tools.exec.security="full" configured. Should succeed, not throw
-    // "exec denied: allowlist miss".
+  it("executes successfully when configured=full and model passes security=allowlist", async () => {
+    // Codex models routinely pass security:"allowlist". With configured="full",
+    // the command should run without hitting an allowlist check.
     const tool = createExecTool({
       security: "full",
       ask: "off",
     });
 
     const result = await tool.execute("call-1", {
-      command: isWin ? "echo hello" : "echo hello",
-      // Model-supplied security downgrade — should be ignored when configured=full
-      security: "allowlist",
+      command: "echo hello",
+      security: "allowlist", // model-supplied downgrade attempt
       ask: "off",
     });
 
@@ -59,9 +55,9 @@ describe("exec security floor: configured full cannot be downgraded by model", (
     expect(text.trim()).toContain("hello");
   });
 
-  it("still enforces allowlist when configured security=allowlist and model passes allowlist", async () => {
-    // When the configured security is already allowlist, the behavior should be
-    // unchanged — a command not on the allowlist should still be denied.
+  it("enforces allowlist when configured=allowlist and model also passes allowlist", async () => {
+    // When the operator configures allowlist, a command not on the list should
+    // still be denied — the model passing the same security level doesn't bypass it.
     const tool = createExecTool({
       security: "allowlist",
       ask: "off",
@@ -70,10 +66,31 @@ describe("exec security floor: configured full cannot be downgraded by model", (
 
     await expect(
       tool.execute("call-2", {
-        command: isWin ? "echo hello" : "echo hello",
+        command: "echo hello",
         security: "allowlist",
         ask: "off",
       }),
     ).rejects.toThrow(/exec denied: allowlist miss/i);
+  });
+
+  it("does not let model pass security=deny to block an allowlist-configured agent", async () => {
+    // Model passing security:"deny" should not override an operator-configured
+    // "allowlist" policy — configuredSecurity is always the floor.
+    // The configured policy is "allowlist" + empty safeBins, so it should deny
+    // with allowlist-miss (not "security=deny"), confirming the model's "deny"
+    // was not honored as a blanket block.
+    const tool = createExecTool({
+      security: "allowlist",
+      ask: "off",
+      safeBins: [],
+    });
+
+    await expect(
+      tool.execute("call-3", {
+        command: "echo hello",
+        security: "deny", // model trying to deny all execution
+        ask: "off",
+      }),
+    ).rejects.toThrow(/exec denied: allowlist miss/i); // allowlist behavior, not hard deny
   });
 });
