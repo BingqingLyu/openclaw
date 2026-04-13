@@ -286,7 +286,7 @@ export function createFollowupRunner(params: {
         fallbackModel = fallbackResult.model;
       } catch (err) {
         if (isAbortError(err)) {
-          throw err;
+          return;
         }
         const message = formatErrorMessage(err);
         replyOperation.fail("run_failed", err);

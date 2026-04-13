@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
+import { drainNextQueueItem } from "../../utils/queue-helpers.js";
 import type { FollowupRun, QueueSettings } from "./queue.js";
 
 const runEmbeddedPiAgentMock = vi.fn();
@@ -1325,7 +1326,7 @@ describe("createFollowupRunner agentDir forwarding", () => {
 });
 
 describe("createFollowupRunner failure handling", () => {
-  it("re-throws interrupt-like errors to prevent dropping the followup run", async () => {
+  it("swallows interrupt-like errors so queue drains can advance", async () => {
     const error = new Error("This operation was aborted");
     error.name = "AbortError";
     runEmbeddedPiAgentMock.mockRejectedValueOnce(error);
@@ -1337,6 +1338,30 @@ describe("createFollowupRunner failure handling", () => {
     });
 
     const queued = baseQueuedRun();
-    await expect(runner(queued)).rejects.toThrow("This operation was aborted");
+    await expect(runner(queued)).resolves.toBeUndefined();
+  });
+
+  it("lets drainNextQueueItem consume aborted followups instead of retrying the same head forever", async () => {
+    const error = new Error("This operation was aborted");
+    error.name = "AbortError";
+    runEmbeddedPiAgentMock.mockRejectedValue(error);
+
+    const abort = new AbortController();
+    abort.abort();
+
+    const runner = createFollowupRunner({
+      opts: { abortSignal: abort.signal },
+      typing: createMockTypingController(),
+      typingMode: "instant",
+      defaultModel: "anthropic/claude-opus-4-6",
+    });
+
+    const queuedItems = [baseQueuedRun(), baseQueuedRun()];
+
+    await expect(drainNextQueueItem(queuedItems, runner)).resolves.toBe(true);
+    expect(queuedItems).toHaveLength(1);
+
+    await expect(drainNextQueueItem(queuedItems, runner)).resolves.toBe(true);
+    expect(queuedItems).toHaveLength(0);
   });
 });
