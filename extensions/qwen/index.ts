@@ -1,7 +1,7 @@
 import { defineSingleProviderPluginEntry } from "openclaw/plugin-sdk/provider-entry";
 import { applyQwenNativeStreamingUsageCompat } from "./api.js";
 import { buildQwenMediaUnderstandingProvider } from "./media-understanding-provider.js";
-import { QWEN_36_PLUS_MODEL_ID, QWEN_BASE_URL } from "./models.js";
+import { QWEN_BASE_URL } from "./models.js";
 import {
   applyQwenConfig,
   applyQwenConfigCn,
@@ -37,13 +37,6 @@ function resolveConfiguredQwenBaseUrl(
     }
   }
   return undefined;
-}
-
-function isQwen36PlusUnsupportedForConfig(_params: {
-  config: Parameters<typeof resolveConfiguredQwenBaseUrl>[0];
-  baseUrl?: string;
-}): boolean {
-  return false;
 }
 
 export default defineSingleProviderPluginEntry({
@@ -115,7 +108,7 @@ export default defineSingleProviderPluginEntry({
           "Manage API keys: https://home.qwencloud.com/api-keys",
           "Docs: https://docs.qwencloud.com/",
           "Endpoint: coding.dashscope.aliyuncs.com",
-          "Models: qwen3.5-plus, glm-5, kimi-k2.5, MiniMax-M2.5, etc.",
+          "Models: qwen3.6-plus, qwen3.5-plus, glm-5, kimi-k2.5, MiniMax-M2.5, etc.",
         ].join("\n"),
         noteTitle: "Qwen Cloud Coding Plan (China)",
         wizard: {
@@ -138,7 +131,7 @@ export default defineSingleProviderPluginEntry({
           "Manage API keys: https://home.qwencloud.com/api-keys",
           "Docs: https://docs.qwencloud.com/",
           "Endpoint: coding-intl.dashscope.aliyuncs.com",
-          "Models: qwen3.5-plus, glm-5, kimi-k2.5, MiniMax-M2.5, etc.",
+          "Models: qwen3.6-plus, qwen3.5-plus, glm-5, kimi-k2.5, MiniMax-M2.5, etc.",
         ].join("\n"),
         noteTitle: "Qwen Cloud Coding Plan (Global/Intl)",
         wizard: {
@@ -168,15 +161,7 @@ export default defineSingleProviderPluginEntry({
     normalizeConfig: () => {
       return undefined;
     },
-    suppressBuiltInModel: (ctx) => {
-      const provider = normalizeProviderId(ctx.provider);
-      if (
-        (provider !== PROVIDER_ID && provider !== LEGACY_PROVIDER_ID) ||
-        ctx.modelId !== QWEN_36_PLUS_MODEL_ID ||
-        !isQwen36PlusUnsupportedForConfig({ config: ctx.config, baseUrl: ctx.baseUrl })
-      ) {
-        return undefined;
-      }
+    suppressBuiltInModel: () => {
       return undefined;
     },
   },
