@@ -35,6 +35,7 @@ const DEEP_SLEEP_SYSTEM_EVENT_TEXT = "__openclaw_memory_core_short_term_promotio
 const DREAM_DIARY_FILE_NAMES = ["DREAMS.md", "dreams.md"] as const;
 const REM_HARNESS_DEFAULT_CANDIDATE_LIMIT = 25;
 const REM_HARNESS_MAX_CANDIDATE_LIMIT = 100;
+const REM_HARNESS_MAX_GROUNDED_FILES = 10;
 
 type DoctorMemoryDreamingPhasePayload = {
   enabled: boolean;
@@ -1138,7 +1139,7 @@ export const doctorHandlers: GatewayRequestHandlers = {
       if (grounded) {
         const memoryDir = path.join(workspaceDir, "memory");
         const dailyFiles = await listWorkspaceDailyFiles(memoryDir);
-        const sliceLimit = Math.max(1, remConfig.limit);
+        const sliceLimit = Math.min(Math.max(1, remConfig.limit), REM_HARNESS_MAX_GROUNDED_FILES);
         const groundedInputs = dailyFiles.slice(-sliceLimit);
         if (groundedInputs.length > 0) {
           const groundedPreview = await previewGroundedRemMarkdown({

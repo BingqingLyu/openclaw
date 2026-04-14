@@ -1267,6 +1267,56 @@ describe("doctor.memory.remHarness", () => {
     }
   });
 
+  it("caps grounded preview inputs at the harness ceiling", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "doctor-rem-harness-grounded-"));
+    const memoryDir = path.join(workspaceDir, "memory");
+    await fs.mkdir(memoryDir, { recursive: true });
+    for (let day = 1; day <= 12; day += 1) {
+      const isoDay = `2026-04-${String(day).padStart(2, "0")}`;
+      await fs.writeFile(path.join(memoryDir, `${isoDay}.md`), `# ${isoDay}\n`, "utf-8");
+    }
+    resolveAgentWorkspaceDir.mockReturnValue(workspaceDir);
+    previewGroundedRemMarkdown.mockResolvedValue({
+      workspaceDir,
+      scannedFiles: 10,
+      files: Array.from({ length: 10 }, (_unused, index) => {
+        const day = index + 3;
+        const isoDay = `2026-04-${String(day).padStart(2, "0")}`;
+        return {
+          path: `memory/${isoDay}.md`,
+          renderedMarkdown: `## REM\n- ${isoDay}`,
+        };
+      }),
+    });
+    const respond = vi.fn();
+
+    try {
+      await invokeDoctorMemoryRemHarness(respond, { grounded: true });
+
+      expect(previewGroundedRemMarkdown).toHaveBeenCalledWith({
+        workspaceDir,
+        inputPaths: Array.from({ length: 10 }, (_unused, index) =>
+          path.join(memoryDir, `2026-04-${String(index + 3).padStart(2, "0")}.md`),
+        ),
+      });
+      const payload = respond.mock.calls[0]?.[1] as {
+        grounded: { scannedFiles: number; files: Array<{ path: string }> } | null;
+      };
+      expect(payload.grounded).toEqual(
+        expect.objectContaining({
+          scannedFiles: 10,
+          files: expect.arrayContaining([
+            expect.objectContaining({ path: "memory/2026-04-03.md" }),
+            expect.objectContaining({ path: "memory/2026-04-12.md" }),
+          ]),
+        }),
+      );
+      expect(payload.grounded?.files).toHaveLength(10);
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("returns an error payload when the recall store read fails", async () => {
     readShortTermRecallEntries.mockRejectedValue(new Error("disk boom"));
     const respond = vi.fn();
