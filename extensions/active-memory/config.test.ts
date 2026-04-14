@@ -21,4 +21,32 @@ describe("active-memory manifest config schema", () => {
 
     expect(result.ok).toBe(true);
   });
+
+  it("accepts explicit in allowedChatTypes", () => {
+    const result = validateJsonSchemaValue({
+      schema: manifest.configSchema,
+      cacheKey: "active-memory.manifest.allowed-chat-types.explicit",
+      value: {
+        enabled: true,
+        agents: ["main"],
+        allowedChatTypes: ["direct", "explicit"],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects unknown allowedChatTypes values", () => {
+    const result = validateJsonSchemaValue({
+      schema: manifest.configSchema,
+      cacheKey: "active-memory.manifest.allowed-chat-types.invalid",
+      value: {
+        enabled: true,
+        agents: ["main"],
+        allowedChatTypes: ["direct", "portal"],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+  });
 });

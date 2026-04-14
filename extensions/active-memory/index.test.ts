@@ -443,6 +443,31 @@ describe("active-memory plugin", () => {
     });
   });
 
+  it("runs for explicit sessions when explicit chat types are explicitly allowed", async () => {
+    api.pluginConfig = {
+      agents: ["main"],
+      allowedChatTypes: ["explicit"],
+    };
+    await plugin.register(api as unknown as OpenClawPluginApi);
+
+    const result = await hooks.before_prompt_build(
+      { prompt: "what should i work on next?", messages: [] },
+      {
+        agentId: "main",
+        trigger: "user",
+        sessionKey: "agent:main:explicit:portal-123",
+        messageProvider: "webchat",
+        channelId: "webchat",
+      },
+    );
+
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      prependSystemContext: expect.stringContaining("plugin-provided supplemental context"),
+      appendSystemContext: expect.stringContaining("<active_memory_plugin>"),
+    });
+  });
+
   it("injects system context on a successful recall hit", async () => {
     const result = await hooks.before_prompt_build(
       {

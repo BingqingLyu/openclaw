@@ -60,7 +60,7 @@ type ActiveRecallPluginConfig = {
   model?: string;
   modelFallback?: string;
   modelFallbackPolicy?: "default-remote" | "resolved-only";
-  allowedChatTypes?: Array<"direct" | "group" | "channel">;
+  allowedChatTypes?: Array<"direct" | "group" | "channel" | "explicit">;
   thinking?: ActiveMemoryThinkingLevel;
   promptStyle?:
     | "balanced"
@@ -95,7 +95,7 @@ type ResolvedActiveRecallPluginConfig = {
   model?: string;
   modelFallback?: string;
   modelFallbackPolicy: "default-remote" | "resolved-only";
-  allowedChatTypes: Array<"direct" | "group" | "channel">;
+  allowedChatTypes: Array<"direct" | "group" | "channel" | "explicit">;
   thinking: ActiveMemoryThinkingLevel;
   promptStyle:
     | "balanced"
@@ -164,7 +164,7 @@ type CachedActiveRecallResult = {
   result: ActiveRecallResult;
 };
 
-type ActiveMemoryChatType = "direct" | "group" | "channel";
+type ActiveMemoryChatType = "direct" | "group" | "channel" | "explicit";
 
 type ActiveMemoryToggleStore = {
   sessions?: Record<string, { disabled?: boolean; updatedAt?: number }>;
@@ -610,7 +610,10 @@ function normalizePluginConfig(pluginConfig: unknown): ResolvedActiveRecallPlugi
   const allowedChatTypes = Array.isArray(raw.allowedChatTypes)
     ? raw.allowedChatTypes.filter(
         (value): value is ActiveMemoryChatType =>
-          value === "direct" || value === "group" || value === "channel",
+          value === "direct" ||
+          value === "group" ||
+          value === "channel" ||
+          value === "explicit",
       )
     : [];
   return {
@@ -881,6 +884,9 @@ function resolveChatType(ctx: {
     }
     if (sessionKey.includes(":channel:")) {
       return "channel";
+    }
+    if (sessionKey.includes(":explicit:")) {
+      return "explicit";
     }
     if (sessionKey.includes(":direct:") || sessionKey.includes(":dm:")) {
       return "direct";
