@@ -1455,11 +1455,10 @@ export function createExecTool(
       const approvalDefaults = loadExecApprovals().defaults;
       const configuredSecurity =
         defaults?.security ?? approvalDefaults?.security ?? (host === "sandbox" ? "deny" : "full");
-      // The operator's configured security is final. There is no legitimate reason
-      // for a model-supplied security arg to change it in any direction -- neither
-      // downgrade (e.g. full->allowlist, the original bug) nor upgrade (e.g. deny->full,
-      // which maxSecurity introduced for deny-configured agents). Model arg ignored.
-      const security = configuredSecurity;
+      // The operator's configured security is final, so model-supplied security
+      // args are ignored entirely. The only legitimate override is elevated mode,
+      // because that permission is granted explicitly by the operator.
+      let security = configuredSecurity;
       if (elevatedRequested && elevatedMode === "full") {
         security = "full";
       }

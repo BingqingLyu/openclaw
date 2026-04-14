@@ -12,21 +12,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { captureEnv } from "../test-utils/env.js";
 import { resetProcessRegistryForTests } from "./bash-process-registry.js";
 import { createExecTool } from "./bash-tools.exec.js";
-import { resolveShellFromPath } from "./shell-utils.js";
-
-const isWin = process.platform === "win32";
-const defaultShell = isWin
-  ? undefined
-  : process.env.OPENCLAW_TEST_SHELL || resolveShellFromPath("bash") || process.env.SHELL || "sh";
 
 describe("exec security floor: configuredSecurity is always the operator floor", () => {
   let envSnapshot: ReturnType<typeof captureEnv>;
 
   beforeEach(() => {
     envSnapshot = captureEnv(["SHELL"]);
-    if (!isWin && defaultShell) {
-      process.env.SHELL = defaultShell;
-    }
     resetProcessRegistryForTests();
   });
 
