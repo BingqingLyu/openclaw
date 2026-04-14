@@ -16,6 +16,9 @@ const resolveMemorySearchConfig = vi.hoisted(() =>
 );
 const getMemorySearchManager = vi.hoisted(() => vi.fn());
 const previewGroundedRemMarkdown = vi.hoisted(() => vi.fn());
+const previewRemDreaming = vi.hoisted(() => vi.fn());
+const rankShortTermPromotionCandidates = vi.hoisted(() => vi.fn());
+const readShortTermRecallEntries = vi.hoisted(() => vi.fn());
 const dedupeDreamDiaryEntries = vi.hoisted(() => vi.fn());
 const writeBackfillDiaryEntries = vi.hoisted(() => vi.fn());
 const removeBackfillDiaryEntries = vi.hoisted(() => vi.fn());
@@ -42,6 +45,9 @@ vi.mock("../../plugins/memory-runtime.js", () => ({
 vi.mock("./doctor.memory-core-runtime.js", () => ({
   dedupeDreamDiaryEntries,
   previewGroundedRemMarkdown,
+  previewRemDreaming,
+  rankShortTermPromotionCandidates,
+  readShortTermRecallEntries,
   writeBackfillDiaryEntries,
   removeBackfillDiaryEntries,
   removeGroundedShortTermCandidates,
@@ -137,6 +143,20 @@ const invokeDoctorMemoryDedupeDreamDiary = async (respond: ReturnType<typeof vi.
     params: {} as never,
     respond: respond as never,
     context: makeRuntimeContext() as never,
+    client: null,
+    isWebchatConnect: () => false,
+  });
+};
+
+const invokeDoctorMemoryRemHarness = async (
+  respond: ReturnType<typeof vi.fn>,
+  params: Record<string, unknown> = {},
+) => {
+  await doctorHandlers["doctor.memory.remHarness"]({
+    req: {} as never,
+    params: params as never,
+    respond: respond as never,
+    context: {} as never,
     client: null,
     isWebchatConnect: () => false,
   });
@@ -1079,5 +1099,240 @@ describe("doctor.memory.dreamDiary", () => {
     } finally {
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("doctor.memory.remHarness", () => {
+  beforeEach(() => {
+    loadConfig.mockClear().mockReturnValue({} as OpenClawConfig);
+    resolveDefaultAgentId.mockClear().mockReturnValue("main");
+    resolveAgentWorkspaceDir.mockReset().mockReturnValue("/tmp/openclaw");
+    readShortTermRecallEntries.mockReset().mockResolvedValue([]);
+    previewRemDreaming.mockReset().mockReturnValue({
+      sourceEntryCount: 0,
+      reflections: [],
+      candidateTruths: [],
+      candidateKeys: [],
+      bodyLines: [],
+    });
+    rankShortTermPromotionCandidates.mockReset().mockResolvedValue([]);
+    previewGroundedRemMarkdown.mockReset();
+  });
+
+  it("returns an empty preview payload for an empty workspace", async () => {
+    const respond = vi.fn();
+
+    await invokeDoctorMemoryRemHarness(respond);
+
+    expect(readShortTermRecallEntries).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceDir: "/tmp/openclaw" }),
+    );
+    expect(previewRemDreaming).toHaveBeenCalledWith(expect.objectContaining({ entries: [] }));
+    expect(rankShortTermPromotionCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceDir: "/tmp/openclaw",
+        minScore: 0,
+        minRecallCount: 0,
+        minUniqueQueries: 0,
+        includePromoted: false,
+        limit: 26,
+      }),
+    );
+    expect(previewGroundedRemMarkdown).not.toHaveBeenCalled();
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        ok: true,
+        agentId: "main",
+        workspaceDir: "/tmp/openclaw",
+        rem: expect.objectContaining({
+          sourceEntryCount: 0,
+          reflections: [],
+          candidateTruths: [],
+        }),
+        grounded: null,
+        deep: expect.objectContaining({
+          candidateLimit: 25,
+          truncated: false,
+          candidates: [],
+        }),
+      }),
+      undefined,
+    );
+  });
+
+  it("maps REM preview and deep candidates into the payload", async () => {
+    previewRemDreaming.mockReturnValue({
+      sourceEntryCount: 2,
+      reflections: ["reflection line"],
+      candidateTruths: [{ snippet: "truthy snippet", confidence: 0.72, evidence: { key: "a" } }],
+      candidateKeys: ["a"],
+      bodyLines: ["## REM", "- truthy snippet"],
+    });
+    rankShortTermPromotionCandidates.mockResolvedValue([
+      {
+        key: "memory/2026-04-14.md:12:16",
+        path: "memory/2026-04-14.md",
+        startLine: 12,
+        endLine: 16,
+        source: "memory",
+        snippet: "durable fact",
+        recallCount: 4,
+        uniqueQueries: 3,
+        avgScore: 0.81,
+        maxScore: 0.92,
+        ageDays: 1,
+        firstRecalledAt: "2026-04-13T10:00:00.000Z",
+        lastRecalledAt: "2026-04-14T10:00:00.000Z",
+        promotedAt: undefined,
+      },
+    ]);
+    const respond = vi.fn();
+
+    await invokeDoctorMemoryRemHarness(respond);
+
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        ok: true,
+        rem: expect.objectContaining({
+          reflections: ["reflection line"],
+          candidateTruths: [{ snippet: "truthy snippet", confidence: 0.72 }],
+          bodyLines: ["## REM", "- truthy snippet"],
+        }),
+        deep: expect.objectContaining({
+          candidateLimit: 25,
+          truncated: false,
+          candidates: [
+            expect.objectContaining({
+              key: "memory/2026-04-14.md:12:16",
+              path: "memory/2026-04-14.md",
+              snippet: "durable fact",
+              recallCount: 4,
+              uniqueQueries: 3,
+              avgScore: 0.81,
+              promoted: false,
+            }),
+          ],
+        }),
+      }),
+      undefined,
+    );
+  });
+
+  it("invokes grounded preview when grounded=true and daily files exist", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "doctor-rem-harness-"));
+    const memoryDir = path.join(workspaceDir, "memory");
+    await fs.mkdir(memoryDir, { recursive: true });
+    await fs.writeFile(path.join(memoryDir, "2026-04-13.md"), "# Day\n", "utf-8");
+    await fs.writeFile(path.join(memoryDir, "2026-04-14.md"), "# Day\n", "utf-8");
+    resolveAgentWorkspaceDir.mockReturnValue(workspaceDir);
+    previewGroundedRemMarkdown.mockResolvedValue({
+      workspaceDir,
+      scannedFiles: 2,
+      files: [
+        { path: "memory/2026-04-13.md", renderedMarkdown: "## REM\n- a" },
+        { path: "memory/2026-04-14.md", renderedMarkdown: "## REM\n- b" },
+      ],
+    });
+    const respond = vi.fn();
+
+    try {
+      await invokeDoctorMemoryRemHarness(respond, { grounded: true });
+
+      expect(previewGroundedRemMarkdown).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceDir,
+          inputPaths: expect.arrayContaining([
+            path.join(memoryDir, "2026-04-13.md"),
+            path.join(memoryDir, "2026-04-14.md"),
+          ]),
+        }),
+      );
+      expect(respond).toHaveBeenCalledWith(
+        true,
+        expect.objectContaining({
+          grounded: expect.objectContaining({
+            scannedFiles: 2,
+            files: [
+              { path: "memory/2026-04-13.md", renderedMarkdown: "## REM\n- a" },
+              { path: "memory/2026-04-14.md", renderedMarkdown: "## REM\n- b" },
+            ],
+          }),
+        }),
+        undefined,
+      );
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns an error payload when the recall store read fails", async () => {
+    readShortTermRecallEntries.mockRejectedValue(new Error("disk boom"));
+    const respond = vi.fn();
+
+    await invokeDoctorMemoryRemHarness(respond);
+
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        ok: false,
+        agentId: "main",
+        workspaceDir: "/tmp/openclaw",
+        error: expect.stringContaining("disk boom"),
+      }),
+      undefined,
+    );
+  });
+
+  it("caps deep candidates and reports truncated when the store exceeds the limit", async () => {
+    const overflowCandidate = (index: number) => ({
+      key: `memory/2026-04-14.md:${index}:${index + 1}`,
+      path: "memory/2026-04-14.md",
+      startLine: index,
+      endLine: index + 1,
+      source: "memory",
+      snippet: `snippet-${index}`,
+      recallCount: 3,
+      uniqueQueries: 2,
+      avgScore: 0.6,
+      maxScore: 0.9,
+      ageDays: 1,
+      firstRecalledAt: "2026-04-13T10:00:00.000Z",
+      lastRecalledAt: "2026-04-14T10:00:00.000Z",
+      promotedAt: undefined,
+    });
+    rankShortTermPromotionCandidates.mockResolvedValue(
+      Array.from({ length: 26 }, (_unused, index) => overflowCandidate(index)),
+    );
+    const respond = vi.fn();
+
+    await invokeDoctorMemoryRemHarness(respond);
+
+    expect(rankShortTermPromotionCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 26 }),
+    );
+    const payload = respond.mock.calls[0]?.[1] as {
+      ok: boolean;
+      deep: { candidateLimit: number; truncated: boolean; candidates: unknown[] };
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.deep.candidateLimit).toBe(25);
+    expect(payload.deep.truncated).toBe(true);
+    expect(payload.deep.candidates).toHaveLength(25);
+  });
+
+  it("clamps caller-supplied limit within [1, REM_HARNESS_MAX_CANDIDATE_LIMIT]", async () => {
+    const respond = vi.fn();
+
+    await invokeDoctorMemoryRemHarness(respond, { limit: 500 });
+
+    expect(rankShortTermPromotionCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 101 }),
+    );
+    const payload = respond.mock.calls[0]?.[1] as {
+      deep: { candidateLimit: number };
+    };
+    expect(payload.deep.candidateLimit).toBe(100);
   });
 });

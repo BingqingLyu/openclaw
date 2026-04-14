@@ -150,3 +150,19 @@ export const removeBackfillDiaryEntries: ApiFacadeModule["removeBackfillDiaryEnt
   loadApiFacadeModule().removeBackfillDiaryEntries(
     ...args,
   )) as ApiFacadeModule["removeBackfillDiaryEntries"];
+
+export const previewRemDreaming: ApiFacadeModule["previewRemDreaming"] = ((...args) =>
+  loadApiFacadeModule().previewRemDreaming(...args)) as ApiFacadeModule["previewRemDreaming"];
+
+export const rankShortTermPromotionCandidates: ApiFacadeModule["rankShortTermPromotionCandidates"] =
+  ((...args) =>
+    loadApiFacadeModule().rankShortTermPromotionCandidates(
+      ...args,
+    )) as ApiFacadeModule["rankShortTermPromotionCandidates"];
+
+export const readShortTermRecallEntries: ApiFacadeModule["readShortTermRecallEntries"] = ((
+  ...args
+) =>
+  loadApiFacadeModule().readShortTermRecallEntries(
+    ...args,
+  )) as ApiFacadeModule["readShortTermRecallEntries"];
