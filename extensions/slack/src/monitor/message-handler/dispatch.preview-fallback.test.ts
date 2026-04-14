@@ -42,6 +42,7 @@ function createPreparedSlackMessage() {
       channelHistories: new Map(),
       allowFrom: [],
       setSlackThreadStatus: async () => undefined,
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     },
     account: {
       accountId: "default",
