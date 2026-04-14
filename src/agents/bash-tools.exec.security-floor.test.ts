@@ -74,11 +74,10 @@ describe("exec security floor: configuredSecurity is always the operator floor",
   });
 
   it("does not let model pass security=deny to block an allowlist-configured agent", async () => {
-    // Model passing security:"deny" should not override an operator-configured
-    // "allowlist" policy — configuredSecurity is always the floor.
-    // The configured policy is "allowlist" + empty safeBins, so it should deny
-    // with allowlist-miss (not "security=deny"), confirming the model's "deny"
-    // was not honored as a blanket block.
+    // The operator configured "allowlist" + empty safeBins. The model passes
+    // security:"deny" trying to blanket-block all exec. The model arg is ignored
+    // entirely -- configuredSecurity wins. So the error is allowlist-miss
+    // (allowlist policy applied), not a hard deny from the model arg.
     const tool = createExecTool({
       security: "allowlist",
       ask: "off",
