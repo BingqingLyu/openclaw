@@ -1,7 +1,7 @@
 import { defineSingleProviderPluginEntry } from "openclaw/plugin-sdk/provider-entry";
 import { applyQwenNativeStreamingUsageCompat } from "./api.js";
 import { buildQwenMediaUnderstandingProvider } from "./media-understanding-provider.js";
-import { isQwenCodingPlanBaseUrl, QWEN_36_PLUS_MODEL_ID, QWEN_BASE_URL } from "./models.js";
+import { QWEN_36_PLUS_MODEL_ID, QWEN_BASE_URL } from "./models.js";
 import {
   applyQwenConfig,
   applyQwenConfigCn,
@@ -39,11 +39,11 @@ function resolveConfiguredQwenBaseUrl(
   return undefined;
 }
 
-function isQwen36PlusUnsupportedForConfig(params: {
+function isQwen36PlusUnsupportedForConfig(_params: {
   config: Parameters<typeof resolveConfiguredQwenBaseUrl>[0];
   baseUrl?: string;
 }): boolean {
-  return isQwenCodingPlanBaseUrl(params.baseUrl ?? resolveConfiguredQwenBaseUrl(params.config));
+  return false;
 }
 
 export default defineSingleProviderPluginEntry({
@@ -165,14 +165,8 @@ export default defineSingleProviderPluginEntry({
     },
     applyNativeStreamingUsageCompat: ({ providerConfig }) =>
       applyQwenNativeStreamingUsageCompat(providerConfig),
-    normalizeConfig: ({ providerConfig }) => {
-      if (!isQwenCodingPlanBaseUrl(providerConfig.baseUrl)) {
-        return undefined;
-      }
-      const models = providerConfig.models?.filter((model) => model.id !== QWEN_36_PLUS_MODEL_ID);
-      return models && models.length !== providerConfig.models?.length
-        ? { ...providerConfig, models }
-        : undefined;
+    normalizeConfig: () => {
+      return undefined;
     },
     suppressBuiltInModel: (ctx) => {
       const provider = normalizeProviderId(ctx.provider);
@@ -183,11 +177,7 @@ export default defineSingleProviderPluginEntry({
       ) {
         return undefined;
       }
-      return {
-        suppress: true,
-        errorMessage:
-          "Unknown model: qwen/qwen3.6-plus. qwen3.6-plus is not supported on the Qwen Coding Plan endpoint; use a Standard pay-as-you-go Qwen endpoint or choose qwen/qwen3.5-plus.",
-      };
+      return undefined;
     },
   },
   register(api) {
