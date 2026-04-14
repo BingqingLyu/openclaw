@@ -154,17 +154,17 @@ You can override with a custom `baseUrl` in config.
 
 OpenClaw currently ships this bundled Qwen catalog.
 
-| Model ref                   | Input       | Context   | Notes                                              |
-| --------------------------- | ----------- | --------- | -------------------------------------------------- |
-| `qwen/qwen3.5-plus`         | text, image | 1,000,000 | Default model                                      |
+| Model ref                   | Input       | Context   | Notes                                                    |
+| --------------------------- | ----------- | --------- | -------------------------------------------------------- |
+| `qwen/qwen3.5-plus`         | text, image | 1,000,000 | Default model                                            |
 | `qwen/qwen3.6-plus`         | text, image | 1,000,000 | Availability still depends on upstream tenant enablement |
-| `qwen/qwen3-max-2026-01-23` | text        | 262,144   | Qwen Max line                                      |
-| `qwen/qwen3-coder-next`     | text        | 262,144   | Coding                                             |
-| `qwen/qwen3-coder-plus`     | text        | 1,000,000 | Coding                                             |
-| `qwen/MiniMax-M2.5`         | text        | 1,000,000 | Reasoning enabled                                  |
-| `qwen/glm-5`                | text        | 202,752   | GLM                                                |
-| `qwen/glm-4.7`              | text        | 202,752   | GLM                                                |
-| `qwen/kimi-k2.5`            | text, image | 262,144   | Moonshot AI via Alibaba                            |
+| `qwen/qwen3-max-2026-01-23` | text        | 262,144   | Qwen Max line                                            |
+| `qwen/qwen3-coder-next`     | text        | 262,144   | Coding                                                   |
+| `qwen/qwen3-coder-plus`     | text        | 1,000,000 | Coding                                                   |
+| `qwen/MiniMax-M2.5`         | text        | 1,000,000 | Reasoning enabled                                        |
+| `qwen/glm-5`                | text        | 202,752   | GLM                                                      |
+| `qwen/glm-4.7`              | text        | 202,752   | GLM                                                      |
+| `qwen/kimi-k2.5`            | text, image | 262,144   | Moonshot AI via Alibaba                                  |
 
 <Note>
 Availability can still vary by endpoint and billing plan even when a model is
