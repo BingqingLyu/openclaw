@@ -13,6 +13,7 @@ import { isSessionPatchEvent, type InternalHookEvent } from "../hooks/internal-h
 import { GATEWAY_CLIENT_IDS, GATEWAY_CLIENT_MODES } from "./protocol/client-info.js";
 import { startGatewayServerHarness, type GatewayServerHarness } from "./server.e2e-ws-harness.js";
 import { createToolSummaryPreviewTranscriptLines } from "./session-preview.test-helpers.js";
+import { performGatewaySessionReset } from "./session-reset-service.js";
 import { resolveGatewaySessionStoreTarget } from "./session-utils.js";
 import {
   connectOk,
@@ -50,6 +51,10 @@ const beforeResetHookMocks = vi.hoisted(() => ({
 const sessionLifecycleHookMocks = vi.hoisted(() => ({
   runSessionEnd: vi.fn(async () => {}),
   runSessionStart: vi.fn(async () => {}),
+}));
+
+const sessionLifecycleMocks = vi.hoisted(() => ({
+  emitSessionLifecycleEvent: vi.fn(),
 }));
 
 const subagentLifecycleHookMocks = vi.hoisted(() => ({
@@ -144,6 +149,14 @@ vi.mock("../plugins/hook-runner-global.js", async () => {
       runSessionStart: sessionLifecycleHookMocks.runSessionStart,
       runSubagentEnded: subagentLifecycleHookMocks.runSubagentEnded,
     })),
+  };
+});
+
+vi.mock("../sessions/session-lifecycle-events.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../sessions/session-lifecycle-events.js")>();
+  return {
+    ...actual,
+    emitSessionLifecycleEvent: sessionLifecycleMocks.emitSessionLifecycleEvent,
   };
 });
 
@@ -361,6 +374,7 @@ describe("gateway server sessions", () => {
     sessionLifecycleHookMocks.runSessionStart.mockClear();
     sessionLifecycleHookState.hasSessionEndHook = true;
     sessionLifecycleHookState.hasSessionStartHook = true;
+    sessionLifecycleMocks.emitSessionLifecycleEvent.mockClear();
     subagentLifecycleHookMocks.runSubagentEnded.mockClear();
     subagentLifecycleHookState.hasSubagentEndedHook = true;
     threadBindingMocks.unbindThreadBindingsBySessionKey.mockClear();
@@ -2727,6 +2741,36 @@ describe("gateway server sessions", () => {
       sessionId: "sess-main",
     });
     ws.close();
+  });
+
+  test("direct session resets emit lifecycle events for shared sessions.changed broadcasts", async () => {
+    await createSessionStoreDir();
+    await writeSessionStore({
+      entries: {
+        main: {
+          sessionId: "sess-main",
+          updatedAt: Date.now(),
+          label: "Ops",
+          displayName: "Ops Main",
+        },
+      },
+    });
+
+    const reset = await performGatewaySessionReset({
+      key: "main",
+      reason: "reset",
+      commandSource: "plugin:test-plugin",
+    });
+
+    expect(reset.ok).toBe(true);
+    expect(sessionLifecycleMocks.emitSessionLifecycleEvent).toHaveBeenCalledTimes(1);
+    expect(sessionLifecycleMocks.emitSessionLifecycleEvent).toHaveBeenCalledWith({
+      sessionKey: "agent:main:main",
+      reason: "reset",
+      parentSessionKey: undefined,
+      label: "Ops",
+      displayName: "Ops Main",
+    });
   });
 
   test("sessions.reset emits enriched session_end and session_start hooks", async () => {
