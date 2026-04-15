@@ -1445,4 +1445,31 @@ describe("doctor.memory.remHarness", () => {
       nowSpy.mockRestore();
     }
   });
+
+  it("clamps forwarded REM preview limit so a huge config value cannot blow up payload", async () => {
+    loadConfig.mockReturnValue({
+      plugins: {
+        entries: {
+          "memory-core": {
+            config: {
+              dreaming: {
+                enabled: true,
+                phases: {
+                  rem: {
+                    enabled: true,
+                    limit: 999_999,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    } as OpenClawConfig);
+    const respond = vi.fn();
+
+    await invokeDoctorMemoryRemHarness(respond);
+
+    expect(previewRemDreaming).toHaveBeenCalledWith(expect.objectContaining({ limit: 50 }));
+  });
 });

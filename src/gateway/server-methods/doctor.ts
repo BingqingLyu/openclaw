@@ -37,6 +37,7 @@ const DREAM_DIARY_FILE_NAMES = ["DREAMS.md", "dreams.md"] as const;
 const REM_HARNESS_DEFAULT_CANDIDATE_LIMIT = 25;
 const REM_HARNESS_MAX_CANDIDATE_LIMIT = 100;
 const REM_HARNESS_MAX_GROUNDED_FILES = 10;
+const REM_HARNESS_MAX_REM_PREVIEW_LIMIT = 50;
 
 type DoctorMemoryDreamingPhasePayload = {
   enabled: boolean;
@@ -1132,9 +1133,16 @@ export const doctorHandlers: GatewayRequestHandlers = {
         lookbackDays: remConfig.lookbackDays,
       });
 
+      // Bounded-read: config-driven `remConfig.limit` is only normalized as a
+      // non-negative int upstream. Cap the value we forward to previewRemDreaming
+      // so a very high config setting cannot blow up harness reflections/bodyLines.
+      const remPreviewLimit = Math.min(
+        Math.max(1, remConfig.limit),
+        REM_HARNESS_MAX_REM_PREVIEW_LIMIT,
+      );
       const remPreview = previewRemDreaming({
         entries: recallEntries,
-        limit: remConfig.limit,
+        limit: remPreviewLimit,
         minPatternStrength: remConfig.minPatternStrength,
       });
 
