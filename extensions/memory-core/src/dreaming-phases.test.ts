@@ -10,11 +10,16 @@ import {
   resolveMemoryRemDreamingConfig,
 } from "openclaw/plugin-sdk/memory-core-host-status";
 import { describe, expect, it, vi } from "vitest";
-import { __testing, runDreamingSweepPhases } from "./dreaming-phases.js";
+import {
+  __testing,
+  filterRecallEntriesWithinLookback,
+  runDreamingSweepPhases,
+} from "./dreaming-phases.js";
 import {
   rankShortTermPromotionCandidates,
   recordShortTermRecalls,
   resolveShortTermPhaseSignalStorePath,
+  type ShortTermRecallEntry,
 } from "./short-term-promotion.js";
 import { createMemoryCoreTestHarness } from "./test-helpers.js";
 
@@ -2521,5 +2526,96 @@ describe("memory-core dreaming phases", () => {
     // With the fix, dailyCount should be 2 because the ingestion date changed.
     // Before the fix, it stayed at 1 because dayBucket was the file date.
     expect(after2[0]?.dailyCount).toBe(2);
+  });
+});
+
+describe("filterRecallEntriesWithinLookback", () => {
+  const NOW_MS = new Date("2026-04-15T12:00:00.000Z").getTime();
+  const LOOKBACK_DAYS = 3;
+  const STALE_LAST_RECALLED_AT = new Date("2026-03-01T00:00:00.000Z").toISOString();
+  const FRESH_RECALL_DAY = "2026-04-14";
+
+  function makeEntry(
+    overrides: Partial<ShortTermRecallEntry> & Pick<ShortTermRecallEntry, "key">,
+  ): ShortTermRecallEntry {
+    return {
+      key: overrides.key,
+      path: overrides.path ?? "src/example.ts",
+      startLine: overrides.startLine ?? 1,
+      endLine: overrides.endLine ?? 10,
+      source: "memory",
+      snippet: overrides.snippet ?? "example snippet",
+      recallCount: overrides.recallCount ?? 1,
+      dailyCount: overrides.dailyCount ?? 0,
+      groundedCount: overrides.groundedCount ?? 0,
+      totalScore: overrides.totalScore ?? 1,
+      maxScore: overrides.maxScore ?? 1,
+      firstRecalledAt: overrides.firstRecalledAt ?? STALE_LAST_RECALLED_AT,
+      lastRecalledAt: overrides.lastRecalledAt ?? STALE_LAST_RECALLED_AT,
+      queryHashes: overrides.queryHashes ?? [],
+      recallDays: overrides.recallDays ?? [],
+      conceptTags: overrides.conceptTags ?? [],
+      ...(overrides.claimHash !== undefined ? { claimHash: overrides.claimHash } : {}),
+      ...(overrides.promotedAt !== undefined ? { promotedAt: overrides.promotedAt } : {}),
+    };
+  }
+
+  it("keeps entries with stale lastRecalledAt when recallDays has a recent day", () => {
+    const entry = makeEntry({
+      key: "stale-last-recalled-fresh-day",
+      lastRecalledAt: STALE_LAST_RECALLED_AT,
+      recallDays: [FRESH_RECALL_DAY],
+    });
+    const result = filterRecallEntriesWithinLookback({
+      entries: [entry],
+      nowMs: NOW_MS,
+      lookbackDays: LOOKBACK_DAYS,
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.key).toBe("stale-last-recalled-fresh-day");
+  });
+
+  it("keeps entries with unparseable lastRecalledAt when recallDays has a recent day", () => {
+    const entry = makeEntry({
+      key: "bad-last-recalled-fresh-day",
+      lastRecalledAt: "not-a-date",
+      recallDays: [FRESH_RECALL_DAY],
+    });
+    const result = filterRecallEntriesWithinLookback({
+      entries: [entry],
+      nowMs: NOW_MS,
+      lookbackDays: LOOKBACK_DAYS,
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.key).toBe("bad-last-recalled-fresh-day");
+  });
+
+  it("drops entries whose lastRecalledAt and recallDays are both outside the window", () => {
+    const entry = makeEntry({
+      key: "stale-everything",
+      lastRecalledAt: STALE_LAST_RECALLED_AT,
+      recallDays: ["2026-03-02"],
+    });
+    const result = filterRecallEntriesWithinLookback({
+      entries: [entry],
+      nowMs: NOW_MS,
+      lookbackDays: LOOKBACK_DAYS,
+    });
+    expect(result).toHaveLength(0);
+  });
+
+  it("keeps entries with a recent lastRecalledAt even when recallDays is empty", () => {
+    const entry = makeEntry({
+      key: "fresh-last-recalled-no-days",
+      lastRecalledAt: new Date("2026-04-14T00:00:00.000Z").toISOString(),
+      recallDays: [],
+    });
+    const result = filterRecallEntriesWithinLookback({
+      entries: [entry],
+      nowMs: NOW_MS,
+      lookbackDays: LOOKBACK_DAYS,
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.key).toBe("fresh-last-recalled-no-days");
   });
 });

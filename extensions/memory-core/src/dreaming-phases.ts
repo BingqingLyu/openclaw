@@ -358,6 +358,18 @@ function entryWithinLookback(entry: ShortTermRecallEntry, cutoffMs: number): boo
   return Number.isFinite(lastRecalledAtMs) && lastRecalledAtMs >= cutoffMs;
 }
 
+// Public lookback filter for recall entries. Kept in memory-core so gateway
+// doctor harness, CLI harness, and internal REM/light dreaming paths all
+// resolve `recallDays` vs `lastRecalledAt` the same way and cannot drift.
+export function filterRecallEntriesWithinLookback(params: {
+  entries: readonly ShortTermRecallEntry[];
+  nowMs: number;
+  lookbackDays: number;
+}): ShortTermRecallEntry[] {
+  const cutoffMs = calculateLookbackCutoffMs(params.nowMs, params.lookbackDays);
+  return params.entries.filter((entry) => entryWithinLookback(entry, cutoffMs));
+}
+
 type DailyIngestionBatch = {
   day: string;
   results: MemorySearchResult[];
@@ -1511,7 +1523,6 @@ async function runLightDreaming(params: {
   nowMs?: number;
 }): Promise<void> {
   const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
-  const cutoffMs = calculateLookbackCutoffMs(nowMs, params.config.lookbackDays);
   await ingestDailyMemorySignals({
     workspaceDir: params.workspaceDir,
     lookbackDays: params.config.lookbackDays,
@@ -1528,9 +1539,11 @@ async function runLightDreaming(params: {
   });
   const recentEntries = await filterLiveShortTermRecallEntries({
     workspaceDir: params.workspaceDir,
-    entries: (
-      await readShortTermRecallEntries({ workspaceDir: params.workspaceDir, nowMs })
-    ).filter((entry) => entryWithinLookback(entry, cutoffMs)),
+    entries: filterRecallEntriesWithinLookback({
+      entries: await readShortTermRecallEntries({ workspaceDir: params.workspaceDir, nowMs }),
+      nowMs,
+      lookbackDays: params.config.lookbackDays,
+    }),
   });
   const entries = dedupeEntries(
     recentEntries
@@ -1609,7 +1622,6 @@ async function runRemDreaming(params: {
   nowMs?: number;
 }): Promise<void> {
   const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
-  const cutoffMs = calculateLookbackCutoffMs(nowMs, params.config.lookbackDays);
   await ingestDailyMemorySignals({
     workspaceDir: params.workspaceDir,
     lookbackDays: params.config.lookbackDays,
@@ -1626,9 +1638,11 @@ async function runRemDreaming(params: {
   });
   const entries = await filterLiveShortTermRecallEntries({
     workspaceDir: params.workspaceDir,
-    entries: (
-      await readShortTermRecallEntries({ workspaceDir: params.workspaceDir, nowMs })
-    ).filter((entry) => entryWithinLookback(entry, cutoffMs)),
+    entries: filterRecallEntriesWithinLookback({
+      entries: await readShortTermRecallEntries({ workspaceDir: params.workspaceDir, nowMs }),
+      nowMs,
+      lookbackDays: params.config.lookbackDays,
+    }),
   });
   const preview = previewRemDreaming({
     entries,

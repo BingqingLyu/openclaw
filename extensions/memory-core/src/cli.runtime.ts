@@ -36,7 +36,11 @@ import type {
   MemorySearchCommandOptions,
 } from "./cli.types.js";
 import { removeBackfillDiaryEntries, writeBackfillDiaryEntries } from "./dreaming-narrative.js";
-import { previewRemDreaming, seedHistoricalDailyMemorySignals } from "./dreaming-phases.js";
+import {
+  filterRecallEntriesWithinLookback,
+  previewRemDreaming,
+  seedHistoricalDailyMemorySignals,
+} from "./dreaming-phases.js";
 import {
   auditDreamingArtifacts,
   repairDreamingArtifacts,
@@ -1589,10 +1593,11 @@ export async function runMemoryRemHarness(opts: MemoryRemHarnessOptions) {
         if (groundedInputPaths.length === 0 && opts.grounded) {
           groundedInputPaths = await listWorkspaceDailyFiles(workspaceDir, remConfig.limit);
         }
-        const cutoffMs = nowMs - Math.max(0, remConfig.lookbackDays) * 24 * 60 * 60 * 1000;
-        const recallEntries = (await readShortTermRecallEntries({ workspaceDir, nowMs })).filter(
-          (entry) => Date.parse(entry.lastRecalledAt) >= cutoffMs,
-        );
+        const recallEntries = filterRecallEntriesWithinLookback({
+          entries: await readShortTermRecallEntries({ workspaceDir, nowMs }),
+          nowMs,
+          lookbackDays: remConfig.lookbackDays,
+        });
         const remPreview = previewRemDreaming({
           entries: recallEntries,
           limit: remConfig.limit,

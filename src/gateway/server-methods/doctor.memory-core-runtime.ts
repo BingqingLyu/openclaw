@@ -1,5 +1,6 @@
 export {
   dedupeDreamDiaryEntries,
+  filterRecallEntriesWithinLookback,
   previewGroundedRemMarkdown,
   previewRemDreaming,
   rankShortTermPromotionCandidates,

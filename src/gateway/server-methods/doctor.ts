@@ -15,6 +15,7 @@ import { getActiveMemorySearchManager } from "../../plugins/memory-runtime.js";
 import { formatError } from "../server-utils.js";
 import {
   dedupeDreamDiaryEntries,
+  filterRecallEntriesWithinLookback,
   previewGroundedRemMarkdown,
   previewRemDreaming,
   rankShortTermPromotionCandidates,
@@ -1121,12 +1122,14 @@ export const doctorHandlers: GatewayRequestHandlers = {
       const deepConfig = resolveMemoryDeepDreamingConfig({ pluginConfig, cfg });
 
       const nowMs = Date.now();
-      const lookbackMs = Math.max(0, remConfig.lookbackDays) * 24 * 60 * 60 * 1000;
-      const cutoffMs = nowMs - lookbackMs;
       const allRecallEntries = await readShortTermRecallEntries({ workspaceDir, nowMs });
-      const recallEntries = allRecallEntries.filter((entry) => {
-        const lastMs = Date.parse(entry.lastRecalledAt);
-        return Number.isFinite(lastMs) && lastMs >= cutoffMs;
+      // Mirror real REM/light dreaming lookback semantics (recallDays + lastRecalledAt)
+      // through the memory-core helper so this read-only harness cannot drift from
+      // what the real pipeline would actually process.
+      const recallEntries = filterRecallEntriesWithinLookback({
+        entries: allRecallEntries,
+        nowMs,
+        lookbackDays: remConfig.lookbackDays,
       });
 
       const remPreview = previewRemDreaming({

@@ -154,6 +154,12 @@ export const removeBackfillDiaryEntries: ApiFacadeModule["removeBackfillDiaryEnt
 export const previewRemDreaming: ApiFacadeModule["previewRemDreaming"] = ((...args) =>
   loadApiFacadeModule().previewRemDreaming(...args)) as ApiFacadeModule["previewRemDreaming"];
 
+export const filterRecallEntriesWithinLookback: ApiFacadeModule["filterRecallEntriesWithinLookback"] =
+  ((...args) =>
+    loadApiFacadeModule().filterRecallEntriesWithinLookback(
+      ...args,
+    )) as ApiFacadeModule["filterRecallEntriesWithinLookback"];
+
 export const rankShortTermPromotionCandidates: ApiFacadeModule["rankShortTermPromotionCandidates"] =
   ((...args) =>
     loadApiFacadeModule().rankShortTermPromotionCandidates(

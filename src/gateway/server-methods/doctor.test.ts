@@ -19,6 +19,7 @@ const previewGroundedRemMarkdown = vi.hoisted(() => vi.fn());
 const previewRemDreaming = vi.hoisted(() => vi.fn());
 const rankShortTermPromotionCandidates = vi.hoisted(() => vi.fn());
 const readShortTermRecallEntries = vi.hoisted(() => vi.fn());
+const filterRecallEntriesWithinLookback = vi.hoisted(() => vi.fn());
 const dedupeDreamDiaryEntries = vi.hoisted(() => vi.fn());
 const writeBackfillDiaryEntries = vi.hoisted(() => vi.fn());
 const removeBackfillDiaryEntries = vi.hoisted(() => vi.fn());
@@ -44,6 +45,7 @@ vi.mock("../../plugins/memory-runtime.js", () => ({
 
 vi.mock("./doctor.memory-core-runtime.js", () => ({
   dedupeDreamDiaryEntries,
+  filterRecallEntriesWithinLookback,
   previewGroundedRemMarkdown,
   previewRemDreaming,
   rankShortTermPromotionCandidates,
@@ -1108,6 +1110,11 @@ describe("doctor.memory.remHarness", () => {
     resolveDefaultAgentId.mockClear().mockReturnValue("main");
     resolveAgentWorkspaceDir.mockReset().mockReturnValue("/tmp/openclaw");
     readShortTermRecallEntries.mockReset().mockResolvedValue([]);
+    // Default: pass-through. Tests that care about lookback semantics replace
+    // this with the real helper via vi.importActual.
+    filterRecallEntriesWithinLookback
+      .mockReset()
+      .mockImplementation((params: { entries: unknown[] }) => params.entries);
     previewRemDreaming.mockReset().mockReturnValue({
       sourceEntryCount: 0,
       reflections: [],
@@ -1384,5 +1391,58 @@ describe("doctor.memory.remHarness", () => {
       deep: { candidateLimit: number };
     };
     expect(payload.deep.candidateLimit).toBe(100);
+  });
+
+  it("forwards entries kept by real lookback filter (stale lastRecalledAt + fresh recallDays)", async () => {
+    // Replace the pass-through stub with the real memory-core helper so this
+    // test locks in that recallDays-based entries survive alongside
+    // lastRecalledAt-based entries, matching real REM pipeline semantics.
+    const runtime = await vi.importActual<typeof import("./doctor.memory-core-runtime.js")>(
+      "./doctor.memory-core-runtime.js",
+    );
+    filterRecallEntriesWithinLookback.mockImplementation(runtime.filterRecallEntriesWithinLookback);
+
+    const staleButFreshDay = {
+      key: "memory/2026-04-14.md:1:5",
+      path: "memory/2026-04-14.md",
+      startLine: 1,
+      endLine: 5,
+      source: "memory",
+      snippet: "kept via recallDays",
+      recallCount: 3,
+      dailyCount: 1,
+      groundedCount: 0,
+      totalScore: 1,
+      maxScore: 1,
+      firstRecalledAt: "2026-03-01T00:00:00.000Z",
+      lastRecalledAt: "2026-03-01T00:00:00.000Z",
+      queryHashes: [],
+      recallDays: ["2026-04-14"],
+      conceptTags: [],
+    };
+    const wayOutOfWindow = {
+      ...staleButFreshDay,
+      key: "memory/2026-02-01.md:1:5",
+      path: "memory/2026-02-01.md",
+      snippet: "dropped — no fresh signal",
+      recallDays: ["2026-02-01"],
+    };
+    readShortTermRecallEntries.mockResolvedValue([staleButFreshDay, wayOutOfWindow]);
+
+    const nowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-04-15T12:00:00.000Z").getTime());
+    try {
+      const respond = vi.fn();
+      await invokeDoctorMemoryRemHarness(respond);
+
+      expect(previewRemDreaming).toHaveBeenCalledTimes(1);
+      const forwarded = previewRemDreaming.mock.calls[0]?.[0] as {
+        entries: Array<{ key: string }>;
+      };
+      expect(forwarded.entries.map((entry) => entry.key)).toEqual(["memory/2026-04-14.md:1:5"]);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
