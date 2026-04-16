@@ -32,7 +32,6 @@ import {
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
-import { emitSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import { ErrorCodes, errorShape } from "./protocol/index.js";
 import {
   archiveSessionTranscriptsDetailed,
@@ -677,12 +676,5 @@ async function performGatewaySessionResetInner(ctx: {
       reason: "session-reset",
     });
   }
-  emitSessionLifecycleEvent({
-    sessionKey: target.canonicalKey,
-    reason: params.reason,
-    parentSessionKey: next.parentSessionKey,
-    label: next.label,
-    displayName: next.displayName,
-  });
   return { ok: true, key: target.canonicalKey, entry: next };
 }

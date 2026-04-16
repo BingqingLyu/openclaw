@@ -12,9 +12,14 @@ const mockLogger = {
 };
 
 const mockPerformGatewaySessionReset = vi.fn();
+const mockEmitSessionLifecycleEvent = vi.fn();
 
 vi.mock("../gateway/session-reset-service.js", () => ({
   performGatewaySessionReset: (...args: unknown[]) => mockPerformGatewaySessionReset(...args),
+}));
+
+vi.mock("../sessions/session-lifecycle-events.js", () => ({
+  emitSessionLifecycleEvent: (...args: unknown[]) => mockEmitSessionLifecycleEvent(...args),
 }));
 
 function createRegistryWithSessionReset() {
@@ -198,7 +203,12 @@ describe("api.resetSession success and failure normalization", () => {
     mockPerformGatewaySessionReset.mockResolvedValue({
       ok: true,
       key: "agent:default:work",
-      entry: { sessionId: "abc-123" },
+      entry: {
+        sessionId: "abc-123",
+        parentSessionKey: "agent:default:parent",
+        label: "Ops Child",
+        displayName: "Ops Child Display",
+      },
     });
     const reg = createRegistryWithSessionReset();
     const api = registerAndCapture(reg);
@@ -208,6 +218,13 @@ describe("api.resetSession success and failure normalization", () => {
       key: "agent:default:work",
       sessionId: "abc-123",
     } satisfies PluginResetSessionResult);
+    expect(mockEmitSessionLifecycleEvent).toHaveBeenCalledWith({
+      sessionKey: "agent:default:work",
+      reason: "new",
+      parentSessionKey: "agent:default:parent",
+      label: "Ops Child",
+      displayName: "Ops Child Display",
+    });
   });
 
   it("normalizes gateway error shape to plugin result", async () => {
@@ -224,6 +241,7 @@ describe("api.resetSession success and failure normalization", () => {
       code: "UNAVAILABLE",
       message: "gateway down",
     });
+    expect(mockEmitSessionLifecycleEvent).not.toHaveBeenCalled();
   });
 
   it("normalizes thrown Error to structured result", async () => {

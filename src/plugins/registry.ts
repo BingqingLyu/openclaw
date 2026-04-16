@@ -14,6 +14,7 @@ import {
   NODE_SYSTEM_NOTIFY_COMMAND,
   NODE_SYSTEM_RUN_COMMANDS,
 } from "../infra/node-commands.js";
+import { emitSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import { normalizePluginGatewayMethodScope } from "../shared/gateway-method-policy.js";
 import {
   normalizeOptionalString,
@@ -1511,6 +1512,15 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                           commandSource: `plugin:${record.id}`,
                         });
                         if (result.ok) {
+                          // Gateway-owned reset callers already broadcast session mutations.
+                          // Keep the plugin-only path responsible for this lifecycle event.
+                          emitSessionLifecycleEvent({
+                            sessionKey: result.key,
+                            reason: normalizedReason,
+                            parentSessionKey: result.entry.parentSessionKey,
+                            label: result.entry.label,
+                            displayName: result.entry.displayName,
+                          });
                           return {
                             ok: true,
                             key: result.key,
