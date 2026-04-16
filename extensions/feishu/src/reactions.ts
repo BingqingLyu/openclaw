@@ -158,9 +158,7 @@ export type FeishuEmojiType = (typeof FeishuEmoji)[keyof typeof FeishuEmoji];
 // convert it here so the API call succeeds.
 const unicodeToFeishuEmoji: Record<string, string> = {
   "👍": "THUMBSUP",
-  "\uD83D\uDC4D": "THUMBSUP",
   "👎": "THUMBSDOWN",
-  "\uD83D\uDC4E": "THUMBSDOWN",
   "❤️": "HEART",
   "❤": "HEART",
   "😊": "SMILE",
