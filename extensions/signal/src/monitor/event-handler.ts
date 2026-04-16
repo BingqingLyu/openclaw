@@ -367,6 +367,11 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       return `signal:${deps.accountId}:${conversationId}:${entry.senderPeerId}`;
     },
     shouldDebounce: (entry) => {
+      // Never coalesce quoted messages — replyToId must not be lost or misbound
+      // when rapid multi-part messages are flushed together.
+      if (entry.replyToId) {
+        return false;
+      }
       return shouldDebounceTextInbound({
         text: entry.bodyText,
         cfg: deps.cfg,
