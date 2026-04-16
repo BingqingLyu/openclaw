@@ -26,7 +26,7 @@ import {
   toInternalMessageReceivedContext,
   triggerInternalHook,
 } from "openclaw/plugin-sdk/hook-runtime";
-import { enqueueSystemEvent } from "openclaw/plugin-sdk/infra-runtime";
+import { enqueueSystemEvent, requestHeartbeatNow } from "openclaw/plugin-sdk/infra-runtime";
 import { kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import {
   buildPendingHistoryContextFromMap,
@@ -858,11 +858,6 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     const messageId =
       typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined;
     const quoteId = dataMessage.quote?.id;
-    const quoteAuthor =
-      dataMessage.quote?.author?.trim() ||
-      dataMessage.quote?.authorUuid?.trim() ||
-      dataMessage.quote?.authorNumber?.trim() ||
-      undefined;
     await inboundDebouncer.enqueue({
       senderName,
       senderDisplay,
@@ -881,7 +876,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       mediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
       commandAuthorized,
       wasMentioned: effectiveWasMentioned,
-      replyToId: typeof quoteId === number ? String(quoteId) : undefined,
+      replyToId: typeof quoteId === "number" ? String(quoteId) : undefined,
       replyToBody: visibleQuoteText || undefined,
       replyToSender: visibleQuoteSender,
       replyToIsQuote: visibleQuoteText ? true : undefined,
