@@ -1136,8 +1136,10 @@ export const doctorHandlers: GatewayRequestHandlers = {
       // Bounded-read: config-driven `remConfig.limit` is only normalized as a
       // non-negative int upstream. Cap the value we forward to previewRemDreaming
       // so a very high config setting cannot blow up harness reflections/bodyLines.
+      // Preserve 0 so `rem.limit: 0` configs surface the same empty preview the
+      // real pipeline would (buildRemReflections.slice(0, 0) -> no patterns).
       const remPreviewLimit = Math.min(
-        Math.max(1, remConfig.limit),
+        Math.max(0, remConfig.limit),
         REM_HARNESS_MAX_REM_PREVIEW_LIMIT,
       );
       const remPreview = previewRemDreaming({
@@ -1206,7 +1208,7 @@ export const doctorHandlers: GatewayRequestHandlers = {
           maxAgeDays: typeof deepConfig.maxAgeDays === "number" ? deepConfig.maxAgeDays : null,
         },
         rem: {
-          sourceEntryCount: recallEntries.length,
+          sourceEntryCount: remPreview.sourceEntryCount,
           reflections: [...remPreview.reflections],
           candidateTruths: remPreview.candidateTruths.map((truth) => ({
             snippet: truth.snippet,
