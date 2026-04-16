@@ -246,6 +246,8 @@ export type DiagnosticsCacheTraceConfig = {
   includeMessages?: boolean;
   includePrompt?: boolean;
   includeSystem?: boolean;
+  includeTools?: boolean;
+  stages?: string;
 };
 
 export type DiagnosticsConfig = {
