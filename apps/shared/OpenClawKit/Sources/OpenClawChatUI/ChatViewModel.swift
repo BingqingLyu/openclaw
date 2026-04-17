@@ -1035,13 +1035,17 @@ public final class OpenClawChatViewModel {
     }
 
     private func shouldAcceptAgentEvent(_ evt: OpenClawAgentEventPayload) -> Bool {
+        // Our own run's events are always accepted.
         if self.pendingRuns.contains(evt.runId) {
             return true
         }
+        // Session-key-matched events are accepted only when no local run is
+        // pending.  While a local run is in flight, another client's events
+        // for the same session would overwrite our streaming UI.
         if let sessionKey = evt.sessionKey,
            Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
         {
-            return true
+            return self.pendingRuns.isEmpty
         }
         if let sessionId {
             return evt.runId == sessionId
