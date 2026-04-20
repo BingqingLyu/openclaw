@@ -15,6 +15,7 @@ import {
   handleStatusCommand,
   handleToolsCommand,
 } from "./commands-info.js";
+import { handleLeanCommand } from "./commands-lean.js";
 import { handleMcpCommand } from "./commands-mcp.js";
 import { handleModelsCommand } from "./commands-models.js";
 import { handlePluginCommand } from "./commands-plugin.js";
@@ -57,6 +58,7 @@ export function loadCommandHandlers(): CommandHandler[] {
     handleAllowlistCommand,
     handleApproveCommand,
     handleContextCommand,
+    handleLeanCommand,
     handleExportSessionCommand,
     handleExportTrajectoryCommand,
     handleWhoamiCommand,

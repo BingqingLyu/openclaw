@@ -21,6 +21,7 @@ import {
   resolveWhatsAppOutboundMediaUrls,
 } from "./outbound-media-contract.js";
 import { loadOutboundMediaFromUrl } from "./outbound-media.runtime.js";
+import { looksLikePdfArchiveCandidate, maybeShoarchiveOutboundPdf } from "./pdf-shoarchive.js";
 import { markdownToWhatsApp, toWhatsappJid } from "./text-runtime.js";
 
 const outboundLog = createSubsystemLogger("gateway/channels/whatsapp").child("outbound");
@@ -152,6 +153,22 @@ export async function sendMessageWhatsApp(
     const result = sendOptions
       ? await active.sendMessage(to, text, mediaBuffer, mediaType, sendOptions)
       : await active.sendMessage(to, text, mediaBuffer, mediaType);
+    if (
+      primaryMediaUrl &&
+      looksLikePdfArchiveCandidate({
+        mediaUrl: primaryMediaUrl,
+        contentType: mediaType,
+        fileName: documentFileName,
+      })
+    ) {
+      await maybeShoarchiveOutboundPdf({
+        mediaUrl: primaryMediaUrl,
+        contentType: mediaType,
+        fileName: documentFileName,
+        recipient: to,
+        via: "WhatsApp",
+      });
+    }
     const messageId = (result as { messageId?: string })?.messageId ?? "unknown";
     const durationMs = Date.now() - startedAt;
     outboundLog.info(
