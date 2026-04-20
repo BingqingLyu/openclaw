@@ -2,7 +2,7 @@ import type { Dispatcher } from "undici";
 import { logWarn } from "../../logger.js";
 import { captureHttpExchange } from "../../proxy-capture/runtime.js";
 import { buildTimeoutAbortSignal } from "../../utils/fetch-timeout.js";
-import { hasProxyEnvConfigured } from "./proxy-env.js";
+import { hasEnvHttpProxyConfigured, matchesNoProxy } from "./proxy-env.js";
 import { retainSafeHeadersForCrossOriginRedirect as retainSafeRedirectHeaders } from "./redirect-headers.js";
 import {
   fetchWithRuntimeDispatcher,
@@ -335,8 +335,18 @@ export async function fetchWithSsrFGuard(params: GuardedFetchOptions): Promise<G
         usesTrustedExplicitProxyMode ? false : params.pinDns,
       );
       await assertExplicitProxyAllowed(params.dispatcherPolicy, params.lookupFn, params.policy);
+      const protocol = parsedUrl.protocol === "https:" ? "https" : "http";
       const canUseTrustedEnvProxy =
-        mode === GUARDED_FETCH_MODE.TRUSTED_ENV_PROXY && hasProxyEnvConfigured();
+        mode === GUARDED_FETCH_MODE.TRUSTED_ENV_PROXY &&
+        hasEnvHttpProxyConfigured(protocol) &&
+        !matchesNoProxy(parsedUrl.toString());
+
+      // Trusted env-proxy and pinDns=false both skip DNS pinning, so keep the
+      // pre-DNS hostname policy checks that the pinned path would normally apply.
+      if (canUseTrustedEnvProxy || params.pinDns === false) {
+        assertHostnameAllowedWithPolicy(parsedUrl.hostname, params.policy);
+      }
+
       if (canUseTrustedEnvProxy) {
         dispatcher = createHttp1EnvHttpProxyAgent();
       } else if (usesTrustedExplicitProxyMode) {

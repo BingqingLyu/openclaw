@@ -2331,6 +2331,7 @@ Settings can be defined globally in `tools.loopDetection` and overridden per-age
         timeoutSeconds: 30,
         cacheTtlMinutes: 15,
         maxRedirects: 3,
+        useTrustedEnvProxy: false, // let a trusted HTTP(S) env proxy resolve DNS
         readability: true,
         userAgent: "custom-ua",
       },
@@ -2338,6 +2339,11 @@ Settings can be defined globally in `tools.loopDetection` and overridden per-age
   },
 }
 ```
+
+Notes:
+
+- `tools.web.fetch.useTrustedEnvProxy`: explicit opt-in for deployments that require `web_fetch` to use a trusted outbound HTTP(S) env proxy for DNS resolution. Enable it only when that proxy is operator-controlled and enforces outbound policy after DNS resolution.
+- See [Web Fetch](/tools/web-fetch) for extraction flow, Firecrawl fallback, and safety details.
 
 ### `tools.media`
 
