@@ -117,6 +117,7 @@ Built-in commands available today:
 - `/allowlist [list|add|remove] ...` manages allowlist entries. Text-only.
 - `/approve <id> <decision>` resolves exec approval prompts.
 - `/btw <question>` asks a side question without changing future session context. See [/tools/btw](/tools/btw).
+- `/lean` runs the prompt-stack cleanup pass with safe autofixes and upgrade guidance.
 - `/subagents list|kill|log|info|send|steer|spawn` manages sub-agent runs for the current session.
 - `/acp spawn|cancel|steer|close|sessions|status|set-mode|set|cwd|permissions|timeout|model|reset-options|doctor|install|help` manages ACP sessions and runtime options.
 - `/focus <target>` binds the current Discord thread or Telegram topic/conversation to a session target.
