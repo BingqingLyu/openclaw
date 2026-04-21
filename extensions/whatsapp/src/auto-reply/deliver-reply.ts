@@ -7,6 +7,10 @@ import {
   sendMediaWithLeadingCaption,
 } from "openclaw/plugin-sdk/reply-payload";
 import { logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
+import {
+  looksLikePdfArchiveCandidate,
+  maybeShoarchiveOutboundPdf,
+} from "openclaw/plugin-sdk/shoarchive";
 import { loadWebMedia } from "../media.js";
 import {
   normalizeWhatsAppLoadedMedia,
@@ -14,7 +18,6 @@ import {
   normalizeWhatsAppPayloadTextPreservingIndentation,
   sendWhatsAppOutboundWithRetry,
 } from "../outbound-media-contract.js";
-import { looksLikePdfArchiveCandidate, maybeShoarchiveOutboundPdf } from "../pdf-shoarchive.js";
 import { buildQuotedMessageOptions, lookupInboundMessageMeta } from "../quoted-message.js";
 import { newConnectionId } from "../reconnect.js";
 import { formatError } from "../session.js";
