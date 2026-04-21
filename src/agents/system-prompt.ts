@@ -481,6 +481,7 @@ export function buildAgentSystemPrompt(params: {
   reactionGuidance?: {
     level: "minimal" | "extensive";
     channel: string;
+    extraGuidance?: string[];
   };
   includeMemorySection?: boolean;
   memoryCitationsMode?: MemoryCitationsMode;
@@ -919,7 +920,11 @@ export function buildAgentSystemPrompt(params: {
             "- Do not chase coverage or react to every routine turn",
             "Guideline: react whenever it clearly feels natural and adds value.",
           ].join("\n");
-    lines.push("## Reactions", guidanceText, "");
+    lines.push("## Reactions", guidanceText);
+    if (params.reactionGuidance.extraGuidance?.length) {
+      lines.push(...params.reactionGuidance.extraGuidance);
+    }
+    lines.push("");
   }
   if (reasoningHint) {
     lines.push("## Reasoning Format", reasoningHint, "");
