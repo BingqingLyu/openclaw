@@ -80,6 +80,21 @@ describe("buildEmbeddedRunPayloads", () => {
     expect(payloads.some((payload) => payload.text === errorJson)).toBe(false);
   });
 
+  it("turns bare terminated assistant errors into safe user-facing copy", () => {
+    const payloads = buildPayloads({
+      assistantTexts: ["terminated"],
+      lastAssistant: makeAssistant({
+        errorMessage: "terminated",
+        content: [{ type: "text", text: "terminated" }],
+      }),
+    });
+
+    expectSinglePayloadSummary(payloads, {
+      text: "LLM request was interrupted. Please try again.",
+      isError: true,
+    });
+  });
+
   it("suppresses pretty-printed error JSON that differs from the errorMessage", () => {
     const payloads = buildPayloads({
       assistantTexts: [errorJsonPretty],

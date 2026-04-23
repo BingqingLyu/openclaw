@@ -56,7 +56,7 @@ describe("QA provider image generation config", () => {
         },
       },
     });
-    expect(patch.agents.defaults.imageGenerationModel.primary).toBe("openai/gpt-image-1");
+    expect(patch.agents.defaults.imageGenerationModel.primary).toBe("openai/gpt-image-2");
     expect(patch).not.toHaveProperty("models");
   });
 });

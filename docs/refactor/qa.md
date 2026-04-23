@@ -195,7 +195,7 @@ Verify generated media is reattached on the follow-up turn.
     agents:
       defaults:
         imageGenerationModel:
-          primary: openai/gpt-image-1
+          primary: openai/gpt-image-2
 - action: session.create
   key: agent:qa:image-roundtrip
 ```
