@@ -662,35 +662,26 @@ export const agentHandlers: GatewayRequestHandlers = {
       const effectiveDeliveryFields = normalizeSessionDeliveryFields({
         deliveryContext: effectiveDelivery,
       });
-      const nextEntryPatch: SessionEntry = {
+      // Patch carries only fields derived from the current request. Fields
+      // read from the stale cached `entry` must NOT appear here — the patch
+      // is later merged via `{...freshStore, ...patch}` in updateSessionStore,
+      // so any stale value in the patch would clobber a fresh store value
+      // written concurrently (e.g. by sessions.patch setting modelOverride
+      // on a subagent between spawn and run — see #5369).
+      const nextEntryPatch: Partial<SessionEntry> = {
         sessionId,
         updatedAt: now,
-        thinkingLevel: entry?.thinkingLevel,
-        fastMode: entry?.fastMode,
-        verboseLevel: entry?.verboseLevel,
-        traceLevel: entry?.traceLevel,
-        reasoningLevel: entry?.reasoningLevel,
-        systemSent: entry?.systemSent,
-        sendPolicy: entry?.sendPolicy,
-        skillsSnapshot: entry?.skillsSnapshot,
         deliveryContext: effectiveDeliveryFields.deliveryContext,
         lastChannel: effectiveDeliveryFields.lastChannel ?? entry?.lastChannel,
         lastTo: effectiveDeliveryFields.lastTo ?? entry?.lastTo,
         lastAccountId: effectiveDeliveryFields.lastAccountId ?? entry?.lastAccountId,
         lastThreadId: effectiveDeliveryFields.lastThreadId ?? entry?.lastThreadId,
-        modelOverride: entry?.modelOverride,
-        providerOverride: entry?.providerOverride,
         label: labelValue,
         spawnedBy: spawnedByValue,
-        spawnedWorkspaceDir: entry?.spawnedWorkspaceDir,
-        spawnDepth: entry?.spawnDepth,
         channel: entry?.channel ?? request.channel?.trim(),
         groupId: resolvedGroupId ?? entry?.groupId,
         groupChannel: resolvedGroupChannel ?? entry?.groupChannel,
         space: resolvedGroupSpace ?? entry?.space,
-        cliSessionIds: entry?.cliSessionIds,
-        cliSessionBindings: entry?.cliSessionBindings,
-        claudeCliSessionId: entry?.claudeCliSessionId,
       };
       sessionEntry = mergeSessionEntry(entry, nextEntryPatch);
       const sendPolicy = resolveSendPolicy({
