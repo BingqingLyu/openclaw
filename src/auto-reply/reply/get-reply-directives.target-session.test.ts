@@ -91,6 +91,7 @@ async function resolveHelloWithModelDefaults(params: {
   defaultReasoning: "on";
   sessionEntry?: SessionEntry;
   agentCfg?: { reasoningDefault?: "off" | "on" | "stream" };
+  commandAuthorized?: boolean;
   ctx?: Parameters<typeof buildTestCtx>[0];
 }) {
   const resolveDefaultThinkingLevel = vi.fn(async () => params.defaultThinking);
@@ -131,7 +132,7 @@ async function resolveHelloWithModelDefaults(params: {
     groupResolution: undefined,
     isGroup: false,
     triggerBodyNormalized: "hello",
-    commandAuthorized: false,
+    commandAuthorized: params.commandAuthorized ?? false,
     defaultProvider: "openai",
     defaultModel: "gpt-4o-mini",
     aliasIndex: { byAlias: new Map(), byKey: new Map() },
@@ -171,13 +172,13 @@ vi.mock("../commands-text-routing.js", () => ({
 }));
 
 vi.mock("./commands-context.js", () => ({
-  buildCommandContext: vi.fn(() => ({
+  buildCommandContext: vi.fn((params: { commandAuthorized?: boolean }) => ({
     surface: "whatsapp",
     channel: "whatsapp",
     channelId: "whatsapp",
     ownerList: [],
     senderIsOwner: false,
-    isAuthorizedSender: false,
+    isAuthorizedSender: params.commandAuthorized === true,
     senderId: undefined,
     abortKey: "abort-key",
     rawBodyNormalized: "hello",
@@ -503,6 +504,23 @@ describe("resolveReplyDirectives", () => {
       defaultReasoning: "on",
       agentCfg: { reasoningDefault: "stream" },
       ctx: { GatewayClientScopes: ["operator.admin"] },
+    });
+
+    expect(result).toEqual({
+      kind: "continue",
+      result: expect.objectContaining({
+        resolvedReasoningLevel: "stream",
+      }),
+    });
+    expect(resolveDefaultReasoningLevel).not.toHaveBeenCalled();
+  });
+
+  it("allows configured reasoning defaults for authorized senders", async () => {
+    const { result, resolveDefaultReasoningLevel } = await resolveHelloWithModelDefaults({
+      defaultThinking: "off",
+      defaultReasoning: "on",
+      agentCfg: { reasoningDefault: "stream" },
+      commandAuthorized: true,
     });
 
     expect(result).toEqual({
