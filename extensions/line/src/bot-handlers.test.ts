@@ -901,7 +901,7 @@ describe("handleLineWebhookEvents", () => {
     );
 
     expect(processMessage).not.toHaveBeenCalled();
-    const entries = groupHistories.get("group-hist-1");
+    const entries = groupHistories.get("default:group-hist-1");
     expect(entries).toHaveLength(1);
     expect(entries?.[0]).toMatchObject({
       sender: "user:user-hist",

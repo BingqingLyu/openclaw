@@ -8,6 +8,7 @@ import {
   createChannelPairingController,
   evaluateGroupRouteAccessForPolicy,
   isDangerousNameMatchingEnabled,
+  recordPendingHistoryEntryIfEnabled,
   resolveAllowlistProviderRuntimeGroupPolicy,
   resolveDefaultGroupPolicy,
   resolveDmGroupAccessWithLists,
@@ -15,6 +16,12 @@ import {
   warnMissingProviderGroupPolicyFallbackOnce,
   type OpenClawConfig,
 } from "../runtime-api.js";
+import {
+  type HistoryEntry,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  resolveMentionGatingWithBypass,
+  resolveNeverReply,
+} from "openclaw/plugin-sdk/googlechat";
 import type { ResolvedGoogleChatAccount } from "./accounts.js";
 import { sendGoogleChatMessage } from "./api.js";
 import type { GoogleChatCoreRuntime } from "./monitor-types.js";
@@ -93,6 +100,7 @@ function extractMentionInfo(annotations: GoogleChatAnnotation[], botUser?: strin
 
 const warnedDeprecatedUsersEmailAllowFrom = new Set<string>();
 const warnedMutableGroupKeys = new Set<string>();
+export const spaceHistories = new Map<string, HistoryEntry[]>();
 
 function warnDeprecatedUsersEmailEntries(logVerbose: (message: string) => void, entries: string[]) {
   const deprecated = entries
@@ -149,6 +157,7 @@ export async function applyGoogleChatInboundAccessPolicy(params: {
   senderName: string;
   senderEmail?: string;
   rawBody: string;
+  eventTime?: string;
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
   logVerbose: (message: string) => void;
 }): Promise<
@@ -240,6 +249,29 @@ export async function applyGoogleChatInboundAccessPolicy(params: {
         return { ok: false };
       }
     }
+  }
+
+  if (
+    isGroup &&
+    resolveNeverReply({ cfg: config, channel: "googlechat", accountId: account.accountId })
+  ) {
+    logVerbose("googlechat: group message stored for context (neverReply: true)");
+    const historyLimit = config.messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT;
+    const historyKey = `${account.accountId}:${spaceId}`;
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: spaceHistories,
+      historyKey,
+      limit: historyLimit,
+      entry: rawBody
+        ? {
+            sender: senderName || senderId,
+            body: rawBody,
+            timestamp: params.eventTime ? Date.parse(params.eventTime) : undefined,
+            messageId: message.name ?? undefined,
+          }
+        : null,
+    });
+    return { ok: false };
   }
 
   const dmPolicy = account.config.dm?.policy ?? "pairing";

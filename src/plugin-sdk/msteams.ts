@@ -61,7 +61,7 @@ export { createChannelReplyPipeline } from "./channel-reply-pipeline.js";
 export type { OpenClawConfig } from "../config/config.js";
 export { isDangerousNameMatchingEnabled } from "../config/dangerous-name-matching.js";
 export { resolveChannelContextVisibilityMode } from "../config/context-visibility.js";
-export { resolveToolsBySender } from "../config/group-policy.js";
+export { resolveNeverReply, resolveToolsBySender } from "../config/group-policy.js";
 export {
   resolveAllowlistProviderRuntimeGroupPolicy,
   resolveDefaultGroupPolicy,

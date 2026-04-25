@@ -1,3 +1,8 @@
+import {
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+} from "openclaw/plugin-sdk/googlechat";
 import { normalizeOptionalLowercaseString } from "openclaw/plugin-sdk/text-runtime";
 import type { OpenClawConfig } from "../runtime-api.js";
 import {
@@ -8,7 +13,11 @@ import {
 import { type ResolvedGoogleChatAccount } from "./accounts.js";
 import { downloadGoogleChatMedia, sendGoogleChatMessage } from "./api.js";
 import { type GoogleChatAudienceType } from "./auth.js";
-import { applyGoogleChatInboundAccessPolicy, isSenderAllowed } from "./monitor-access.js";
+import {
+  applyGoogleChatInboundAccessPolicy,
+  isSenderAllowed,
+  spaceHistories,
+} from "./monitor-access.js";
 import { deliverGoogleChatReply } from "./monitor-reply-delivery.js";
 import {
   handleGoogleChatWebhookRequest,
@@ -154,6 +163,7 @@ async function processMessageWithPipeline(params: {
     senderName,
     senderEmail,
     rawBody,
+    eventTime: event.eventTime,
     statusSink,
     logVerbose: (message) => logVerbose(core, runtime, message),
   });
@@ -195,8 +205,27 @@ async function processMessageWithPipeline(params: {
     body: rawBody,
   });
 
+  const historyLimit = config.messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT;
+  const historyKey = `${account.accountId}:${spaceId}`;
+  const combinedBody = isGroup
+    ? buildPendingHistoryContextFromMap({
+        historyMap: spaceHistories,
+        historyKey,
+        limit: historyLimit,
+        currentMessage: body,
+        formatEntry: (entry) =>
+          core.channel.reply.formatInboundEnvelope({
+            channel: "Google Chat",
+            from: fromLabel,
+            timestamp: entry.timestamp,
+            body: entry.body,
+            senderLabel: entry.sender,
+          }),
+      })
+    : body;
+
   const ctxPayload = core.channel.reply.finalizeInboundContext({
-    Body: body,
+    Body: combinedBody,
     BodyForAgent: rawBody,
     RawBody: rawBody,
     CommandBody: rawBody,
@@ -304,6 +333,13 @@ async function processMessageWithPipeline(params: {
       onModelSelected,
     },
   });
+  if (isGroup) {
+    clearHistoryEntriesIfEnabled({
+      historyMap: spaceHistories,
+      historyKey,
+      limit: historyLimit,
+    });
+  }
 }
 
 async function downloadAttachment(

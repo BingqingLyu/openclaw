@@ -18,6 +18,7 @@ import {
   recordPendingHistoryEntryIfEnabled,
   type HistoryEntry,
 } from "openclaw/plugin-sdk/reply-history";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { getChildLogger, logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { logDebug, normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import { resolveDefaultDiscordAccountId } from "../accounts.js";
@@ -867,6 +868,20 @@ export async function preflightDiscordMessage(
           messageId: message.id,
         } satisfies HistoryEntry)
       : undefined;
+
+  if (
+    isGuildMessage &&
+    resolveNeverReply({ cfg: freshCfg, channel: "discord", accountId: resolvedAccountId })
+  ) {
+    logDebug("[discord-preflight] group message stored for context (neverReply: true)");
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: params.guildHistories,
+      historyKey: messageChannelId,
+      limit: params.historyLimit,
+      entry: historyEntry ?? null,
+    });
+    return null;
+  }
 
   const threadOwnerId = threadChannel
     ? (resolveDiscordChannelInfoSafe(threadChannel).ownerId ?? channelInfo?.ownerId)

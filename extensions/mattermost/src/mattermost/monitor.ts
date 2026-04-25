@@ -6,6 +6,7 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "openclaw/plugin-sdk/text-runtime";
+import { resolveNeverReply } from "openclaw/plugin-sdk/mattermost";
 import { getMattermostRuntime } from "../runtime.js";
 import { resolveMattermostAccount, resolveMattermostReplyToMode } from "./accounts.js";
 import {
@@ -1408,6 +1409,15 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
                 : null,
           });
         };
+
+        if (
+          kind !== "direct" &&
+          resolveNeverReply({ cfg, channel: "mattermost", accountId: account.accountId })
+        ) {
+          logVerboseMessage("mattermost: group message stored for context (neverReply: true)");
+          recordPendingHistory();
+          return;
+        }
 
         const oncharEnabled = account.chatmode === "onchar" && kind !== "direct";
         const oncharPrefixes = oncharEnabled ? resolveOncharPrefixes(account.oncharPrefixes) : [];

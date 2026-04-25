@@ -19,6 +19,7 @@ import {
   recordPendingHistoryEntryIfEnabled,
   type HistoryEntry,
 } from "openclaw/plugin-sdk/reply-history";
+import { resolveNeverReply } from "openclaw/plugin-sdk/msteams";
 import {
   buildMSTeamsAttachmentPlaceholder,
   buildMSTeamsMediaPayload,
@@ -384,6 +385,27 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
         });
         return;
       }
+    }
+
+    if (
+      !isDirectMessage &&
+      resolveNeverReply({ cfg, channel: "msteams", accountId: DEFAULT_ACCOUNT_ID })
+    ) {
+      log.debug?.("msteams: group message stored for context (neverReply: true)");
+      recordPendingHistoryEntryIfEnabled({
+        historyMap: conversationHistories,
+        historyKey: conversationId,
+        limit: historyLimit,
+        entry: rawBody
+          ? {
+              sender: senderName,
+              body: rawBody,
+              timestamp: parseMSTeamsActivityTimestamp(activity.timestamp)?.getTime(),
+              messageId: activity.id ?? undefined,
+            }
+          : null,
+      });
+      return;
     }
 
     const commandDmAllowFrom = isDirectMessage ? effectiveDmAllowFrom : configuredDmAllowFrom;

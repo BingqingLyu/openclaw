@@ -18,6 +18,14 @@ import {
   resolveDefaultGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
 } from "openclaw/plugin-sdk/runtime-group-policy";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
+import {
+  type HistoryEntry,
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  recordPendingHistoryEntryIfEnabled,
+} from "openclaw/plugin-sdk/zalo";
 import { registerPluginHttpRoute, resolveWebhookPath } from "openclaw/plugin-sdk/webhook-ingress";
 import type { ResolvedZaloAccount } from "./accounts.js";
 import {
@@ -93,6 +101,7 @@ type ZaloUpdateProcessingParams = ZaloProcessingContext & {
 
 let zaloWebhookModulePromise: Promise<ZaloWebhookModule> | undefined;
 const hostedMediaRouteRefs = new Map<string, { count: number; unregisters: Array<() => void> }>();
+const groupHistories = new Map<string, HistoryEntry[]>();
 
 function loadZaloWebhookModule(): Promise<ZaloWebhookModule> {
   zaloWebhookModulePromise ??= import("./monitor.webhook.js");
@@ -459,6 +468,30 @@ async function authorizeZaloMessage(
     }
   }
 
+  if (
+    isGroup &&
+    resolveNeverReply({ cfg: config, channel: "zalo", accountId: account.accountId })
+  ) {
+    logVerbose(core, runtime, "zalo: group message stored for context (neverReply: true)");
+    const historyLimit = config.messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT;
+    const historyBody = text?.trim() || (mediaPath ? "<media:image>" : "");
+    const historyKey = `${account.accountId}:${chatId}`;
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: groupHistories,
+      historyKey,
+      limit: historyLimit,
+      entry: historyBody
+        ? {
+            sender: senderName || senderId,
+            body: historyBody,
+            timestamp: date ? date * 1000 : undefined,
+            messageId: message_id ?? undefined,
+          }
+        : null,
+    });
+    return;
+  }
+
   const rawBody = text?.trim() || (mediaPath ? "<media:image>" : "");
   const { senderAllowedForCommands, commandAuthorized } =
     await resolveSenderCommandAuthorizationWithRuntime({
@@ -583,8 +616,27 @@ async function processMessageWithPipeline(params: ZaloMessagePipelineParams): Pr
     body: rawBody,
   });
 
+  const historyLimit = config.messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT;
+  const combinedHistoryKey = `${account.accountId}:${chatId}`;
+  const combinedBody = isGroup
+    ? buildPendingHistoryContextFromMap({
+        historyMap: groupHistories,
+        historyKey: combinedHistoryKey,
+        limit: historyLimit,
+        currentMessage: body,
+        formatEntry: (entry) =>
+          core.channel.reply.formatInboundEnvelope({
+            channel: "Zalo",
+            from: fromLabel,
+            timestamp: entry.timestamp,
+            body: entry.body,
+            senderLabel: entry.sender,
+          }),
+      })
+    : body;
+
   const ctxPayload = core.channel.reply.finalizeInboundContext({
-    Body: body,
+    Body: combinedBody,
     BodyForAgent: rawBody,
     RawBody: rawBody,
     CommandBody: rawBody,
@@ -682,6 +734,13 @@ async function processMessageWithPipeline(params: ZaloMessagePipelineParams): Pr
       onModelSelected,
     },
   });
+  if (isGroup) {
+    clearHistoryEntriesIfEnabled({
+      historyMap: groupHistories,
+      historyKey: combinedHistoryKey,
+      limit: historyLimit,
+    });
+  }
 }
 
 async function deliverZaloReply(params: {
