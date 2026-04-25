@@ -122,7 +122,6 @@ export async function resolveTelegramInboundBody(params: {
     allMedia,
     isGroup,
     chatId,
-    accountId,
     senderId,
     senderUsername,
     sessionKey,

@@ -1,5 +1,12 @@
 import { resolveInboundMentionDecision } from "openclaw/plugin-sdk/channel-inbound";
 import {
+  type HistoryEntry,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  recordPendingHistoryEntryIfEnabled,
+  resolveMentionGatingWithBypass,
+  resolveNeverReply,
+} from "openclaw/plugin-sdk/googlechat";
+import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "openclaw/plugin-sdk/text-runtime";
@@ -8,7 +15,6 @@ import {
   createChannelPairingController,
   evaluateGroupRouteAccessForPolicy,
   isDangerousNameMatchingEnabled,
-  recordPendingHistoryEntryIfEnabled,
   resolveAllowlistProviderRuntimeGroupPolicy,
   resolveDefaultGroupPolicy,
   resolveDmGroupAccessWithLists,
@@ -16,12 +22,6 @@ import {
   warnMissingProviderGroupPolicyFallbackOnce,
   type OpenClawConfig,
 } from "../runtime-api.js";
-import {
-  type HistoryEntry,
-  DEFAULT_GROUP_HISTORY_LIMIT,
-  resolveMentionGatingWithBypass,
-  resolveNeverReply,
-} from "openclaw/plugin-sdk/googlechat";
 import type { ResolvedGoogleChatAccount } from "./accounts.js";
 import { sendGoogleChatMessage } from "./api.js";
 import type { GoogleChatCoreRuntime } from "./monitor-types.js";
