@@ -633,6 +633,9 @@ export class QmdMemoryManager implements MemorySearchManager {
       }
       conflictName = this.findCollectionByPathPattern(collection, existing);
     }
+    if (!conflictName) {
+      conflictName = this.extractPathPatternConflictCollectionName(addErrorMessage);
+    }
 
     if (!conflictName) {
       return false;
@@ -673,6 +676,11 @@ export class QmdMemoryManager implements MemorySearchManager {
       );
       return false;
     }
+  }
+
+  private extractPathPatternConflictCollectionName(message: string): string | null {
+    const match = /^\s*Name:\s*([a-z0-9._-]+)\s*\(qmd:\/\/[^)]+\)/im.exec(message);
+    return match?.[1] ?? null;
   }
 
   private async migrateLegacyUnscopedCollections(
