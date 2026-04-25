@@ -23,7 +23,7 @@ export function registerNodesCli(program: Command) {
           ["openclaw nodes status", "List known nodes with live status."],
           ["openclaw nodes pairing pending", "Show pending node pairing requests."],
           [
-            'openclaw nodes invoke --node <id> --command system.which --params \'{"name":"uname"}\'',
+            'openclaw nodes invoke --node <id> --command system.which --params \'{"bins":["uname"]}\'',
             "Invoke a node command directly.",
           ],
           ["openclaw nodes camera snap --node <id>", "Capture a photo from a node camera."],
