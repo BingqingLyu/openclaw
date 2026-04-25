@@ -3,6 +3,7 @@ import {
   readStoreAllowFromForDmPolicy,
   resolveEffectiveAllowFromLists,
 } from "openclaw/plugin-sdk/channel-policy";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-auth";
 import {
   GROUP_POLICY_BLOCKED_LABEL,
@@ -18,7 +19,6 @@ import {
   clearHistoryEntriesIfEnabled,
   DEFAULT_GROUP_HISTORY_LIMIT,
   recordPendingHistoryEntryIfEnabled,
-  resolveNeverReply,
 } from "openclaw/plugin-sdk/irc";
 import {
   deliverFormattedTextWithAttachments,
