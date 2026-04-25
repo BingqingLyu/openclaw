@@ -397,6 +397,7 @@ describe("web outbound", () => {
 
     await sendMessageWhatsApp("+1555", "doc", {
       verbose: false,
+      cfg: WHATSAPP_TEST_CFG,
       mediaUrl: "/tmp/contract.pdf",
     });
 
