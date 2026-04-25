@@ -439,8 +439,8 @@ async function handleMessageEvent(event: MessageEvent, context: LineHandlerConte
     const historyKey = rawKey ? `${account.accountId}:${rawKey}` : undefined;
     const rawText = message.type === "text" ? message.text : "";
     const senderId =
-      event.source.type === "group" || event.source.type === "room"
-        ? (event.source.userId ?? "unknown")
+      event.source?.type === "group" || event.source?.type === "room"
+        ? (event.source?.userId ?? "unknown")
         : "unknown";
     if (historyKey && context.groupHistories) {
       recordPendingHistoryEntryIfEnabled({
@@ -493,8 +493,8 @@ async function handleMessageEvent(event: MessageEvent, context: LineHandlerConte
       const rawHistKey = groupId ?? roomId;
       const historyKey = rawHistKey ? `${account.accountId}:${rawHistKey}` : undefined;
       const senderId =
-        event.source.type === "group" || event.source.type === "room"
-          ? (event.source.userId ?? "unknown")
+        event.source?.type === "group" || event.source?.type === "room"
+          ? (event.source?.userId ?? "unknown")
           : "unknown";
       if (historyKey && context.groupHistories) {
         recordPendingHistoryEntryIfEnabled({

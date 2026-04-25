@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { logTypingFailure } from "openclaw/plugin-sdk/channel-feedback";
 import { createChannelPairingController } from "openclaw/plugin-sdk/channel-pairing";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import {
   resolveDirectDmAuthorizationOutcome,
@@ -18,7 +19,7 @@ import {
   resolveDefaultGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
 } from "openclaw/plugin-sdk/runtime-group-policy";
-import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
+import { registerPluginHttpRoute, resolveWebhookPath } from "openclaw/plugin-sdk/webhook-ingress";
 import {
   type HistoryEntry,
   buildPendingHistoryContextFromMap,
@@ -26,7 +27,6 @@ import {
   DEFAULT_GROUP_HISTORY_LIMIT,
   recordPendingHistoryEntryIfEnabled,
 } from "openclaw/plugin-sdk/zalo";
-import { registerPluginHttpRoute, resolveWebhookPath } from "openclaw/plugin-sdk/webhook-ingress";
 import type { ResolvedZaloAccount } from "./accounts.js";
 import {
   ZaloApiError,
@@ -484,8 +484,8 @@ async function authorizeZaloMessage(
         ? {
             sender: senderName || senderId,
             body: historyBody,
-            timestamp: date ? date * 1000 : undefined,
-            messageId: message_id ?? undefined,
+            timestamp: message.date ? message.date * 1000 : undefined,
+            messageId: message.message_id ?? undefined,
           }
         : null,
     });

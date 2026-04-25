@@ -1,6 +1,6 @@
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
+import type { HistoryEntry } from "openclaw/plugin-sdk/reply-history";
 import { describe, expect, it } from "vitest";
-import type { HistoryEntry } from "../auto-reply/reply/history.js";
-import type { OpenClawConfig } from "../config/config.js";
 import { resolveTelegramInboundBody } from "./bot-message-context.body.js";
 
 describe("resolveTelegramInboundBody neverReply", () => {

@@ -1,9 +1,9 @@
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import {
   resolveOutboundMediaUrls,
   resolveTextChunksWithFallback,
   sendMediaWithLeadingCaption,
 } from "openclaw/plugin-sdk/reply-payload";
-import { resolveNeverReply } from "openclaw/plugin-sdk/bluebubbles";
 import { isPrivateNetworkOptInEnabled } from "openclaw/plugin-sdk/ssrf-runtime";
 import {
   normalizeLowercaseStringOrEmpty,

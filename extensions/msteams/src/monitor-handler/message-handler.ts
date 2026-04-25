@@ -4,6 +4,7 @@ import {
   logInboundDrop,
   resolveInboundSessionEnvelopeContext,
 } from "openclaw/plugin-sdk/channel-inbound";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { resolveDualTextControlCommandGate } from "openclaw/plugin-sdk/command-gating";
 import {
   filterSupplementalContextItems,
@@ -19,7 +20,6 @@ import {
   recordPendingHistoryEntryIfEnabled,
   type HistoryEntry,
 } from "openclaw/plugin-sdk/reply-history";
-import { resolveNeverReply } from "openclaw/plugin-sdk/msteams";
 import {
   buildMSTeamsAttachmentPlaceholder,
   buildMSTeamsMediaPayload,
@@ -387,10 +387,7 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       }
     }
 
-    if (
-      !isDirectMessage &&
-      resolveNeverReply({ cfg, channel: "msteams", accountId: DEFAULT_ACCOUNT_ID })
-    ) {
+    if (!isDirectMessage && resolveNeverReply({ cfg, channel: "msteams", accountId: undefined })) {
       log.debug?.("msteams: group message stored for context (neverReply: true)");
       recordPendingHistoryEntryIfEnabled({
         historyMap: conversationHistories,

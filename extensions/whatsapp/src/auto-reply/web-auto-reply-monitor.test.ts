@@ -518,7 +518,7 @@ describe("applyGroupGating", () => {
     expect(result.shouldProcess).toBe(true);
   });
 
-  it("returns shouldProcess false when neverReply is set on whatsapp channel config", () => {
+  it("returns shouldProcess false when neverReply is set on whatsapp channel config", async () => {
     const cfg = makeConfig({
       channels: {
         whatsapp: {
@@ -529,7 +529,7 @@ describe("applyGroupGating", () => {
       },
     });
 
-    const { result, groupHistories } = runGroupGating({
+    const { result, groupHistories } = await runGroupGating({
       cfg,
       msg: createGroupMessage(),
     });

@@ -98,7 +98,6 @@ export async function resolveTelegramInboundBody(params: {
   allMedia: TelegramMediaRef[];
   isGroup: boolean;
   chatId: number | string;
-  accountId?: string;
   senderId: string;
   senderUsername: string;
   sessionKey?: string;
