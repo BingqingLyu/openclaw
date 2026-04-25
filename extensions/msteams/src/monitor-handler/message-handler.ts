@@ -1,3 +1,4 @@
+import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/account-id";
 import { formatAllowlistMatchMeta } from "openclaw/plugin-sdk/allow-from";
 import { resolveInboundMentionDecision } from "openclaw/plugin-sdk/channel-inbound";
 import {
@@ -387,7 +388,10 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       }
     }
 
-    if (!isDirectMessage && resolveNeverReply({ cfg, channel: "msteams", accountId: undefined })) {
+    if (
+      !isDirectMessage &&
+      resolveNeverReply({ cfg, channel: "msteams", accountId: DEFAULT_ACCOUNT_ID })
+    ) {
       log.debug?.("msteams: group message stored for context (neverReply: true)");
       recordPendingHistoryEntryIfEnabled({
         historyMap: conversationHistories,
