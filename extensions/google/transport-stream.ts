@@ -33,6 +33,13 @@ import {
   type GoogleThinkingInputLevel,
   type GoogleThinkingLevel,
 } from "./thinking-api.js";
+import { resolveGoogleVertexAdcToken } from "./vertex-adc.js";
+import {
+  GOOGLE_VERTEX_CREDENTIALS_MARKER,
+  resolveGoogleVertexClientRegion,
+  resolveGoogleVertexProjectId,
+  resolveGoogleVertexRegionFromBaseUrl,
+} from "./vertex-region.js";
 
 type GoogleTransportModel = Model<"google-generative-ai"> & {
   headers?: Record<string, string>;
@@ -188,9 +195,97 @@ function resolveGoogleModelPath(modelId: string): string {
   return `models/${modelId}`;
 }
 
+function isGoogleVertexModel(model: GoogleTransportModel): boolean {
+  if (model.provider === "google-vertex") {
+    return true;
+  }
+  return resolveGoogleVertexRegionFromBaseUrl(model.baseUrl) !== undefined;
+}
+
+function resolveGoogleVertexRequestProject(model: GoogleTransportModel): string | undefined {
+  return (
+    model.headers?.["x-goog-user-project"]?.trim() ||
+    model.headers?.["X-Goog-User-Project"]?.trim() ||
+    resolveGoogleVertexProjectId() ||
+    undefined
+  );
+}
+
+function resolveGoogleVertexEndpointOrigin(baseUrl: string | undefined): string {
+  // Strip any path or trailing /v1 from the configured baseUrl so the Vertex URL
+  // builder can append /v1/projects/... without producing /v1/v1/projects/...
+  if (!baseUrl) {
+    return "https://aiplatform.googleapis.com";
+  }
+  try {
+    const url = new URL(baseUrl);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return baseUrl.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+  }
+}
+
+function resolveGoogleVertexModelPath(modelId: string): string {
+  // Preserve already-qualified Vertex paths so callers can pass tunedModels/...
+  // or fully-qualified publishers/.../models/... ids without double-prefixing.
+  if (
+    modelId.startsWith("publishers/") ||
+    modelId.startsWith("tunedModels/") ||
+    modelId.startsWith("projects/")
+  ) {
+    return modelId;
+  }
+  if (modelId.startsWith("models/")) {
+    return `publishers/google/${modelId}`;
+  }
+  return `publishers/google/models/${modelId}`;
+}
+
+function buildGoogleVertexRequestUrl(model: GoogleTransportModel): string {
+  const project = resolveGoogleVertexRequestProject(model);
+  if (!project) {
+    throw new Error(
+      "Google Vertex AI: project ID is required. Set GOOGLE_CLOUD_PROJECT or " +
+        'configure models.providers.google-vertex.headers["x-goog-user-project"].',
+    );
+  }
+  const location = resolveGoogleVertexClientRegion({ baseUrl: model.baseUrl }) ?? "global";
+  const origin = resolveGoogleVertexEndpointOrigin(model.baseUrl);
+  const modelPath = resolveGoogleVertexModelPath(model.id);
+  return `${origin}/v1/projects/${project}/locations/${location}/${modelPath}:streamGenerateContent?alt=sse`;
+}
+
 function buildGoogleRequestUrl(model: GoogleTransportModel): string {
+  if (isGoogleVertexModel(model)) {
+    return buildGoogleVertexRequestUrl(model);
+  }
   const baseUrl = normalizeGoogleApiBaseUrl(model.baseUrl);
   return `${baseUrl}/${resolveGoogleModelPath(model.id)}:streamGenerateContent?alt=sse`;
+}
+
+async function resolveGoogleRequestApiKey(
+  model: GoogleTransportModel,
+  apiKey: string | undefined,
+): Promise<string | undefined> {
+  if (!isGoogleVertexModel(model)) {
+    return apiKey;
+  }
+  // Vertex auth flows through ADC. The synthetic marker is published as the
+  // provider apiKey so the rest of the runtime treats the provider as
+  // configured; we exchange it for a real Bearer token here so that
+  // parseGeminiAuth emits Authorization: Bearer <token> rather than
+  // sending the marker as x-goog-api-key.
+  if (!apiKey || apiKey === GOOGLE_VERTEX_CREDENTIALS_MARKER) {
+    const token = await resolveGoogleVertexAdcToken();
+    if (!token) {
+      throw new Error(
+        "Google Vertex AI: ADC credentials not available. " +
+          'Run "gcloud auth application-default login" or set GOOGLE_APPLICATION_CREDENTIALS.',
+      );
+    }
+    return JSON.stringify({ token: token.accessToken });
+  }
+  return apiKey;
 }
 
 function resolveThinkingLevel(level: ThinkingLevel, modelId: string): GoogleThinkingLevel {
@@ -634,7 +729,8 @@ export function createGoogleGenerativeAiTransportStreamFn(): StreamFn {
         timestamp: Date.now(),
       };
       try {
-        const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? undefined;
+        const rawApiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? undefined;
+        const apiKey = await resolveGoogleRequestApiKey(model, rawApiKey);
         const guardedFetch = buildGuardedModelFetch(model);
         let params = buildGoogleGenerativeAiParams(model, context, options);
         const nextParams = await options?.onPayload?.(params, model);

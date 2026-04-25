@@ -7,7 +7,7 @@ export function createGoogleProvider(): ProviderPlugin {
     id: "google",
     label: "Google AI Studio",
     docsPath: "/providers/models",
-    hookAliases: ["google-antigravity", "google-vertex"],
+    hookAliases: ["google-antigravity"],
     envVars: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
     auth: [
       {
@@ -25,6 +25,15 @@ export function createGoogleProvider(): ProviderPlugin {
         },
       },
     ],
+  };
+}
+
+export function createGoogleVertexProvider(): ProviderPlugin {
+  return {
+    id: "google-vertex",
+    label: "Google Vertex AI",
+    docsPath: "/providers/models",
+    auth: [],
   };
 }
 
