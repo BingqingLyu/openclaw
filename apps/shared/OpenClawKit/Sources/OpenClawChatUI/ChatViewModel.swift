@@ -250,6 +250,7 @@ public final class OpenClawChatViewModel {
             await self.fetchModels()
             self.errorText = nil
         } catch {
+            self.hasLoadedInitialState = false
             self.errorText = error.localizedDescription
             chatUILogger.error("bootstrap failed \(error.localizedDescription, privacy: .public)")
         }
@@ -614,6 +615,9 @@ public final class OpenClawChatViewModel {
         let next = sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !next.isEmpty else { return }
         guard next != self.sessionKey else { return }
+        self.clearPendingRuns(reason: nil)
+        self.pendingToolCallsById = [:]
+        self.streamingAssistantText = nil
         self.sessionKey = next
         self.modelSelectionID = Self.defaultModelSelectionID
         await self.bootstrap()
