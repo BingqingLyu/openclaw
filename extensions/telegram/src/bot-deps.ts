@@ -3,7 +3,7 @@ import { loadConfig, resolveStorePath } from "openclaw/plugin-sdk/config-runtime
 import { loadSessionStore } from "openclaw/plugin-sdk/config-runtime";
 import { readChannelAllowFromStore } from "openclaw/plugin-sdk/conversation-runtime";
 import { upsertChannelPairingRequest } from "openclaw/plugin-sdk/conversation-runtime";
-import { enqueueSystemEvent } from "openclaw/plugin-sdk/infra-runtime";
+import { enqueueSystemEvent, requestHeartbeatNow } from "openclaw/plugin-sdk/infra-runtime";
 import { buildModelsProviderData } from "openclaw/plugin-sdk/models-provider-runtime";
 import { dispatchReplyWithBufferedBlockDispatcher } from "openclaw/plugin-sdk/reply-dispatch-runtime";
 import { listSkillCommandsForAgents } from "openclaw/plugin-sdk/skill-commands-runtime";
@@ -22,6 +22,7 @@ export type TelegramBotDeps = {
   readChannelAllowFromStore: typeof readChannelAllowFromStore;
   upsertChannelPairingRequest: typeof upsertChannelPairingRequest;
   enqueueSystemEvent: typeof enqueueSystemEvent;
+  requestHeartbeatNow: typeof requestHeartbeatNow;
   dispatchReplyWithBufferedBlockDispatcher: typeof dispatchReplyWithBufferedBlockDispatcher;
   loadWebMedia?: typeof loadWebMedia;
   buildModelsProviderData: typeof buildModelsProviderData;
@@ -54,6 +55,9 @@ export const defaultTelegramBotDeps: TelegramBotDeps = {
   },
   get enqueueSystemEvent() {
     return enqueueSystemEvent;
+  },
+  get requestHeartbeatNow() {
+    return requestHeartbeatNow;
   },
   get dispatchReplyWithBufferedBlockDispatcher() {
     return dispatchReplyWithBufferedBlockDispatcher;

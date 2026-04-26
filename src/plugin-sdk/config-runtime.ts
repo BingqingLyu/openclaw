@@ -94,6 +94,7 @@ export { resolveAgentMaxConcurrent } from "../config/agent-limits.js";
 export { loadCronStore, resolveCronStorePath, saveCronStore } from "../cron/store.js";
 export { applyModelOverrideToSessionEntry } from "../sessions/model-overrides.js";
 export { coerceSecretRef } from "../config/types.secrets.js";
+export { normalizeTelegramReactionKey } from "../config/telegram-reaction-semantics.js";
 export {
   resolveConfiguredSecretInputString,
   resolveConfiguredSecretInputWithFallback,
@@ -132,6 +133,9 @@ export type {
   TelegramGroupConfig,
   TelegramInlineButtonsScope,
   TelegramNetworkConfig,
+  TelegramReactionSemantic,
+  TelegramReactionSemanticAction,
+  TelegramReactionSemanticsConfig,
   TelegramTopicConfig,
   ResolvedTtsPersona,
   TtsAutoMode,
