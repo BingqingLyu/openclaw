@@ -8,6 +8,7 @@ export function resolveOpenClawAgentDir(env: NodeJS.ProcessEnv = process.env): s
   if (override) {
     return resolveUserPath(override, env);
   }
-  const defaultAgentDir = path.join(resolveStateDir(env), "agents", DEFAULT_AGENT_ID, "agent");
+  const agentId = env.OPENCLAW_DEFAULT_AGENT_ID?.trim() || DEFAULT_AGENT_ID;
+  const defaultAgentDir = path.join(resolveStateDir(env), "agents", agentId, "agent");
   return resolveUserPath(defaultAgentDir, env);
 }
