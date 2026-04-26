@@ -7,6 +7,7 @@ import type {
 import type { SessionEntry, SessionScope } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { MediaUnderstandingDecision } from "../media-understanding/types.js";
+import type { TelegramTopicStatusContext } from "./telegram-topic-status.js";
 
 export type BuildStatusTextParams = {
   cfg: OpenClawConfig;
@@ -16,6 +17,8 @@ export type BuildStatusTextParams = {
   sessionScope?: SessionScope;
   storePath?: string;
   statusChannel: string;
+  messageContext?: TelegramTopicStatusContext;
+  commandTo?: string;
   provider: string;
   model: string;
   contextTokens?: number;
