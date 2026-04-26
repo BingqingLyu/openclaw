@@ -563,8 +563,10 @@ public final class OpenClawChatViewModel {
                 attachments: encodedAttachments)
             if response.runId != runId {
                 self.clearPendingRun(runId)
-                self.pendingRuns.insert(response.runId)
-                self.armPendingRunTimeout(runId: response.runId)
+                if Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey) {
+                    self.pendingRuns.insert(response.runId)
+                    self.armPendingRunTimeout(runId: response.runId)
+                }
             }
         } catch {
             self.clearPendingRun(runId)
@@ -1039,9 +1041,12 @@ public final class OpenClawChatViewModel {
     }
 
     private func shouldAcceptAgentEvent(_ evt: OpenClawAgentEventPayload) -> Bool {
-        // Our own run's events are always accepted.
+        // Our own run's events are accepted only while they still belong to the
+        // currently selected session. Session switches clear pendingRuns, but an
+        // in-flight send can still remap to the server runId after the switch.
         if self.pendingRuns.contains(evt.runId) {
-            return true
+            guard let sessionKey = evt.sessionKey else { return true }
+            return Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
         }
         // Session-key-matched events are accepted only when no local run is
         // pending.  While a local run is in flight, another client's events
