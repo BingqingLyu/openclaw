@@ -1105,8 +1105,8 @@ export const doctorHandlers: GatewayRequestHandlers = {
     };
     respond(true, payload, undefined);
   },
-  "doctor.memory.remHarness": async ({ params, respond }) => {
-    const cfg = loadConfig();
+  "doctor.memory.remHarness": async ({ params, respond, context }) => {
+    const cfg = context.getRuntimeConfig();
     const agentId = resolveDefaultAgentId(cfg);
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
     const req = asRecord(params);
@@ -1223,7 +1223,7 @@ export const doctorHandlers: GatewayRequestHandlers = {
           candidates: deepCandidates.map((candidate) => {
             const promoted =
               typeof candidate.promotedAt === "string" && candidate.promotedAt.length > 0;
-            return {
+            const payload: DoctorMemoryRemHarnessCandidatePayload = {
               key: candidate.key,
               path: candidate.path,
               startLine: candidate.startLine,
@@ -1237,8 +1237,11 @@ export const doctorHandlers: GatewayRequestHandlers = {
               firstRecalledAt: candidate.firstRecalledAt,
               lastRecalledAt: candidate.lastRecalledAt,
               promoted,
-              ...(promoted ? { promotedAt: candidate.promotedAt } : {}),
             };
+            if (promoted) {
+              payload.promotedAt = candidate.promotedAt;
+            }
+            return payload;
           }),
         },
       };

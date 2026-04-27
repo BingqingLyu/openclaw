@@ -60,6 +60,55 @@ type GroundedRemPreviewResult = {
   files: GroundedRemFilePreview[];
 };
 
+type ShortTermRecallEntry = {
+  key: string;
+  path: string;
+  startLine: number;
+  endLine: number;
+  source: string;
+  snippet: string;
+  recallCount: number;
+  dailyCount: number;
+  groundedCount: number;
+  totalScore: number;
+  maxScore: number;
+  firstRecalledAt: string;
+  lastRecalledAt: string;
+  queryHashes: string[];
+  recallDays: string[];
+  conceptTags: string[];
+  claimHash?: string;
+  promotedAt?: string;
+};
+
+type RemDreamingPreview = {
+  sourceEntryCount: number;
+  reflections: string[];
+  candidateTruths: Array<{
+    snippet: string;
+    confidence: number;
+    evidence: string;
+  }>;
+  candidateKeys: string[];
+  bodyLines: string[];
+};
+
+type PromotionCandidate = {
+  key: string;
+  path: string;
+  startLine: number;
+  endLine: number;
+  snippet: string;
+  recallCount: number;
+  uniqueQueries: number;
+  avgScore: number;
+  maxScore: number;
+  ageDays: number;
+  firstRecalledAt: string;
+  lastRecalledAt: string;
+  promotedAt?: string;
+};
+
 type ApiFacadeModule = {
   previewGroundedRemMarkdown: (params: {
     workspaceDir: string;
@@ -80,6 +129,31 @@ type ApiFacadeModule = {
   removeBackfillDiaryEntries: (params: {
     workspaceDir: string;
   }) => Promise<{ dreamsPath: string; removed: number }>;
+  previewRemDreaming: (params: {
+    entries: ShortTermRecallEntry[];
+    limit: number;
+    minPatternStrength: number;
+  }) => RemDreamingPreview;
+  filterRecallEntriesWithinLookback: (params: {
+    entries: readonly ShortTermRecallEntry[];
+    nowMs: number;
+    lookbackDays: number;
+  }) => ShortTermRecallEntry[];
+  rankShortTermPromotionCandidates: (params: {
+    workspaceDir: string;
+    minScore: number;
+    minRecallCount: number;
+    minUniqueQueries: number;
+    includePromoted?: boolean;
+    recencyHalfLifeDays?: number;
+    maxAgeDays?: number;
+    limit?: number;
+    nowMs?: number;
+  }) => Promise<PromotionCandidate[]>;
+  readShortTermRecallEntries: (params: {
+    workspaceDir: string;
+    nowMs?: number;
+  }) => Promise<ShortTermRecallEntry[]>;
 };
 
 type RepairDreamingArtifactsResult = {

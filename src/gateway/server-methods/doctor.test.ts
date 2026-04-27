@@ -158,7 +158,7 @@ const invokeDoctorMemoryRemHarness = async (
     req: {} as never,
     params: params as never,
     respond: respond as never,
-    context: {} as never,
+    context: makeRuntimeContext() as never,
     client: null,
     isWebchatConnect: () => false,
   });
@@ -1106,7 +1106,7 @@ describe("doctor.memory.dreamDiary", () => {
 
 describe("doctor.memory.remHarness", () => {
   beforeEach(() => {
-    loadConfig.mockClear().mockReturnValue({} as OpenClawConfig);
+    getRuntimeConfig.mockClear().mockReturnValue({} as OpenClawConfig);
     resolveDefaultAgentId.mockClear().mockReturnValue("main");
     resolveAgentWorkspaceDir.mockReset().mockReturnValue("/tmp/openclaw");
     readShortTermRecallEntries.mockReset().mockResolvedValue([]);
@@ -1447,7 +1447,7 @@ describe("doctor.memory.remHarness", () => {
   });
 
   it("clamps forwarded REM preview limit so a huge config value cannot blow up payload", async () => {
-    loadConfig.mockReturnValue({
+    getRuntimeConfig.mockReturnValue({
       plugins: {
         entries: {
           "memory-core": {
