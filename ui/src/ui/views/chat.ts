@@ -4,9 +4,12 @@ import { repeat } from "lit/directives/repeat.js";
 import type { CompactionStatus, FallbackStatus } from "../app-tool-stream.ts";
 import {
   CHAT_ATTACHMENT_ACCEPT,
-  isSupportedChatAttachmentMimeType,
+  isSupportedChatAttachmentFile,
 } from "../chat/attachment-support.ts";
 import { buildChatItems } from "../chat/build-chat-items.ts";
+import { renderChatQueue } from "../chat/chat-queue.ts";
+import { buildRawSidebarContent } from "../chat/chat-sidebar-raw.ts";
+import { renderWelcomeState, resolveAssistantDisplayAvatar } from "../chat/chat-welcome.ts";
 import { renderContextNotice } from "../chat/context-notice.ts";
 import { DeletedMessages } from "../chat/deleted-messages.ts";
 import { exportChatMarkdown } from "../chat/export.ts";
@@ -14,7 +17,6 @@ import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
-  resolveAssistantTextAvatar,
 } from "../chat/grouped-render.ts";
 import { InputHistory } from "../chat/input-history.ts";
 import { PinnedMessages } from "../chat/pinned-messages.ts";
@@ -34,7 +36,6 @@ import {
 } from "../chat/slash-commands.ts";
 import { isSttSupported, startStt, stopStt } from "../chat/speech.ts";
 import { renderCompactionIndicator, renderFallbackIndicator } from "../chat/status-indicators.ts";
-import { buildSidebarContent } from "../chat/tool-cards.ts";
 import { getExpandedToolCards, syncToolCardExpansionState } from "../chat/tool-expansion-state.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
 import { icons } from "../icons.ts";
@@ -43,7 +44,6 @@ import { detectTextDirection } from "../text-direction.ts";
 import type { SessionsListResult } from "../types.ts";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { resolveLocalUserName } from "../user-identity.ts";
-import { agentLogoUrl, resolveChatAvatarRenderUrl } from "./agents-utils.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 import "../components/resizable-divider.ts";
 
@@ -205,6 +205,19 @@ function generateAttachmentId(): string {
   return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function chatAttachmentFromFile(file: File, dataUrl: string): ChatAttachment {
+  return {
+    id: generateAttachmentId(),
+    dataUrl,
+    mimeType: file.type || "application/octet-stream",
+    fileName: file.name || undefined,
+  };
+}
+
+function isImageAttachment(att: ChatAttachment): boolean {
+  return att.mimeType.startsWith("image/");
+}
+
 function handlePaste(e: ClipboardEvent, props: ChatProps) {
   const items = e.clipboardData?.items;
   if (!items || !props.onAttachmentsChange) {
@@ -229,11 +242,7 @@ function handlePaste(e: ClipboardEvent, props: ChatProps) {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
       const dataUrl = reader.result as string;
-      const newAttachment: ChatAttachment = {
-        id: generateAttachmentId(),
-        dataUrl,
-        mimeType: file.type,
-      };
+      const newAttachment = chatAttachmentFromFile(file, dataUrl);
       const current = props.attachments ?? [];
       props.onAttachmentsChange?.([...current, newAttachment]);
     });
@@ -250,17 +259,13 @@ function handleFileSelect(e: Event, props: ChatProps) {
   const additions: ChatAttachment[] = [];
   let pending = 0;
   for (const file of input.files) {
-    if (!isSupportedChatAttachmentMimeType(file.type)) {
+    if (!isSupportedChatAttachmentFile(file)) {
       continue;
     }
     pending++;
     const reader = new FileReader();
     reader.addEventListener("load", () => {
-      additions.push({
-        id: generateAttachmentId(),
-        dataUrl: reader.result as string,
-        mimeType: file.type,
-      });
+      additions.push(chatAttachmentFromFile(file, reader.result as string));
       pending--;
       if (pending === 0) {
         props.onAttachmentsChange?.([...current, ...additions]);
@@ -281,17 +286,13 @@ function handleDrop(e: DragEvent, props: ChatProps) {
   const additions: ChatAttachment[] = [];
   let pending = 0;
   for (const file of files) {
-    if (!isSupportedChatAttachmentMimeType(file.type)) {
+    if (!isSupportedChatAttachmentFile(file)) {
       continue;
     }
     pending++;
     const reader = new FileReader();
     reader.addEventListener("load", () => {
-      additions.push({
-        id: generateAttachmentId(),
-        dataUrl: reader.result as string,
-        mimeType: file.type,
-      });
+      additions.push(chatAttachmentFromFile(file, reader.result as string));
       pending--;
       if (pending === 0) {
         props.onAttachmentsChange?.([...current, ...additions]);
@@ -310,8 +311,24 @@ function renderAttachmentPreview(props: ChatProps): TemplateResult | typeof noth
     <div class="chat-attachments-preview">
       ${attachments.map(
         (att) => html`
-          <div class="chat-attachment-thumb">
-            <img src=${att.dataUrl} alt="Attachment preview" />
+          <div
+            class=${[
+              "chat-attachment-thumb",
+              isImageAttachment(att) ? "" : "chat-attachment-thumb--file",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            ${isImageAttachment(att)
+              ? html`<img src=${att.dataUrl} alt="Attachment preview" />`
+              : html`
+                  <div class="chat-attachment-file" title=${att.fileName ?? "Attached file"}>
+                    <span class="chat-attachment-file__icon">${icons.paperclip}</span>
+                    <span class="chat-attachment-file__name"
+                      >${att.fileName ?? "Attached file"}</span
+                    >
+                  </div>
+                `}
             <button
               class="chat-attachment-remove"
               type="button"
@@ -466,77 +483,6 @@ function tokenEstimate(draft: string): string | null {
  */
 function exportMarkdown(props: ChatProps): void {
   exportChatMarkdown(props.messages, props.assistantName);
-}
-
-const WELCOME_SUGGESTIONS = [
-  "What can you do?",
-  "Summarize my recent sessions",
-  "Help me configure a channel",
-  "Check system health",
-];
-
-function renderWelcomeState(props: ChatProps): TemplateResult {
-  const name = props.assistantName || "Assistant";
-  const avatar = resolveAssistantAvatarUrl(props);
-  const avatarText = avatar ? null : resolveAssistantTextAvatar(props.assistantAvatar);
-  const logoUrl = agentLogoUrl(props.basePath ?? "");
-
-  return html`
-    <div class="agent-chat__welcome" style="--agent-color: var(--accent)">
-      <div class="agent-chat__welcome-glow"></div>
-      ${avatar
-        ? html`<img
-            src=${avatar}
-            alt=${name}
-            style="width:56px; height:56px; border-radius:50%; object-fit:cover;"
-          />`
-        : avatarText
-          ? html`<div class="agent-chat__avatar agent-chat__avatar--text" aria-label=${name}>
-              ${avatarText}
-            </div>`
-          : html`<div class="agent-chat__avatar agent-chat__avatar--logo">
-              <img src=${logoUrl} alt="OpenClaw" />
-            </div>`}
-      <h2>${name}</h2>
-      <div class="agent-chat__badges">
-        <span class="agent-chat__badge"><img src=${logoUrl} alt="" /> Ready to chat</span>
-      </div>
-      <p class="agent-chat__hint">Type a message below &middot; <kbd>/</kbd> for commands</p>
-      <div class="agent-chat__suggestions">
-        ${WELCOME_SUGGESTIONS.map(
-          (text) => html`
-            <button
-              type="button"
-              class="agent-chat__suggestion"
-              @click=${() => {
-                props.onDraftChange(text);
-                props.onSend();
-              }}
-            >
-              ${text}
-            </button>
-          `,
-        )}
-      </div>
-    </div>
-  `;
-}
-
-function resolveAssistantAvatarUrl(
-  props: Pick<ChatProps, "assistantAvatar" | "assistantAvatarUrl">,
-): string | null {
-  return resolveChatAvatarRenderUrl(props.assistantAvatarUrl, {
-    identity: {
-      avatar: props.assistantAvatar ?? undefined,
-      avatarUrl: props.assistantAvatarUrl ?? undefined,
-    },
-  });
-}
-
-function resolveAssistantDisplayAvatar(
-  props: Pick<ChatProps, "assistantAvatar" | "assistantAvatarUrl">,
-): string | null {
-  return resolveAssistantAvatarUrl(props) ?? resolveAssistantTextAvatar(props.assistantAvatar);
 }
 
 function renderSearchBar(requestUpdate: () => void): TemplateResult | typeof nothing {
@@ -829,6 +775,7 @@ export function renderChat(props: ChatProps) {
     requestUpdate();
   };
   const isEmpty = chatItems.length === 0 && !props.loading;
+  const showLoadingSkeleton = props.loading && chatItems.length === 0;
 
   const thread = html`
     <div
@@ -839,7 +786,7 @@ export function renderChat(props: ChatProps) {
       @click=${handleCodeBlockCopy}
     >
       <div class="chat-thread-inner">
-        ${props.loading
+        ${showLoadingSkeleton
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">
                 <div class="chat-line assistant">
@@ -1125,19 +1072,12 @@ export function renderChat(props: ChatProps) {
                   allowExternalEmbedUrls: props.allowExternalEmbedUrls ?? false,
                   onClose: props.onCloseSidebar!,
                   onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) {
+                    if (!props.onOpenSidebar) {
                       return;
                     }
-                    if (props.sidebarContent.kind === "markdown") {
-                      props.onOpenSidebar(
-                        buildSidebarContent(`\`\`\`\n${props.sidebarContent.content}\n\`\`\``),
-                      );
-                      return;
-                    }
-                    if (props.sidebarContent.rawText?.trim()) {
-                      props.onOpenSidebar(
-                        buildSidebarContent(`\`\`\`json\n${props.sidebarContent.rawText}\n\`\`\``),
-                      );
+                    const rawContent = buildRawSidebarContent(props.sidebarContent);
+                    if (rawContent) {
+                      props.onOpenSidebar(rawContent);
                     }
                   },
                 })}
@@ -1146,61 +1086,12 @@ export function renderChat(props: ChatProps) {
           : nothing}
       </div>
 
-      ${props.queue.length
-        ? html`
-            <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__title">Queued (${props.queue.length})</div>
-              <div class="chat-queue__list">
-                ${props.queue.map(
-                  (item) => html`
-                    <div
-                      class="chat-queue__item ${item.kind === "steered"
-                        ? "chat-queue__item--steered"
-                        : ""}"
-                    >
-                      <div class="chat-queue__main">
-                        ${item.kind === "steered"
-                          ? html`<span class="chat-queue__badge">Steered</span>`
-                          : nothing}
-                        <div class="chat-queue__text">
-                          ${item.text ||
-                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")}
-                        </div>
-                      </div>
-                      <div class="chat-queue__actions">
-                        ${props.canAbort &&
-                        props.onQueueSteer &&
-                        item.kind !== "steered" &&
-                        !item.localCommandName
-                          ? html`
-                              <button
-                                class="btn chat-queue__steer"
-                                type="button"
-                                title="Steer now"
-                                aria-label="Steer queued message"
-                                @click=${() => props.onQueueSteer?.(item.id)}
-                              >
-                                ${icons.cornerDownRight}
-                                <span>Steer</span>
-                              </button>
-                            `
-                          : nothing}
-                        <button
-                          class="btn chat-queue__remove"
-                          type="button"
-                          aria-label="Remove queued message"
-                          @click=${() => props.onQueueRemove(item.id)}
-                        >
-                          ${icons.x}
-                        </button>
-                      </div>
-                    </div>
-                  `,
-                )}
-              </div>
-            </div>
-          `
-        : nothing}
+      ${renderChatQueue({
+        queue: props.queue,
+        canAbort: props.canAbort,
+        onQueueSteer: props.onQueueSteer,
+        onQueueRemove: props.onQueueRemove,
+      })}
       ${renderSideResult(props.sideResult, props.onDismissSideResult)}
       ${renderFallbackIndicator(props.fallbackStatus)}
       ${renderCompactionIndicator(props.compactionStatus)}

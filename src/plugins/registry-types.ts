@@ -189,6 +189,7 @@ export type PluginServiceRegistration = {
   pluginName?: string;
   service: OpenClawPluginService;
   source: string;
+  origin: PluginOrigin;
   rootDir?: string;
 };
 
@@ -335,6 +336,7 @@ export type PluginRegistry = {
 export type PluginRegistryParams = {
   logger: PluginLogger;
   coreGatewayHandlers?: GatewayRequestHandlers;
+  coreGatewayMethodNames?: readonly string[];
   runtime: PluginRuntime;
   activateGlobalSideEffects?: boolean;
 };

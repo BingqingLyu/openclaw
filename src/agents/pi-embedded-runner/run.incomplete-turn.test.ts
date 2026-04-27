@@ -17,6 +17,7 @@ import {
   DEFAULT_REASONING_ONLY_RETRY_LIMIT,
   EMPTY_RESPONSE_RETRY_INSTRUCTION,
   extractPlanningOnlyPlanDetails,
+  hasCommittedUserVisibleToolDelivery,
   isLikelyExecutionAckPrompt,
   PLANNING_ONLY_RETRY_INSTRUCTION,
   REASONING_ONLY_RETRY_INSTRUCTION,
@@ -29,6 +30,8 @@ import {
   STRICT_AGENTIC_BLOCKED_TEXT,
   resolveReplayInvalidFlag,
   resolveRunLivenessState,
+  resolveSilentToolResultReplyPayload,
+  shouldTreatEmptyAssistantReplyAsSilent,
 } from "./run/incomplete-turn.js";
 import type { EmbeddedRunAttemptResult } from "./run/types.js";
 
@@ -72,6 +75,113 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(mockedClassifyFailoverReason).toHaveBeenCalledTimes(1);
     expect(result.payloads?.[0]?.isError).toBe(true);
     expect(result.payloads?.[0]?.text).toContain("verify before retrying");
+  });
+
+  it("synthesizes a silent cron payload from a trailing current-attempt NO_REPLY tool result", () => {
+    const payload = resolveSilentToolResultReplyPayload({
+      isCronTrigger: true,
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [{ toolName: "exec" }],
+        messagesSnapshot: [
+          {
+            role: "toolResult",
+            content: [{ type: "text", text: "NO_REPLY" }],
+            details: { aggregated: "NO_REPLY" },
+          } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number],
+          {
+            role: "assistant",
+            stopReason: "stop",
+            provider: "openai",
+            model: "gpt-5.4",
+            content: [],
+          } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number],
+        ],
+      }),
+    });
+
+    expect(payload).toEqual({ text: "NO_REPLY" });
+  });
+
+  it("does not reuse an older NO_REPLY tool result without current-attempt tool activity", () => {
+    const payload = resolveSilentToolResultReplyPayload({
+      isCronTrigger: true,
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [],
+        messagesSnapshot: [
+          {
+            role: "toolResult",
+            content: [{ type: "text", text: "NO_REPLY" }],
+          } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number],
+          {
+            role: "user",
+            content: [{ type: "text", text: "Current cron prompt" }],
+          } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number],
+          {
+            role: "assistant",
+            stopReason: "stop",
+            provider: "openai",
+            model: "gpt-5.4",
+            content: [],
+          } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number],
+        ],
+      }),
+    });
+
+    expect(payload).toBeNull();
+  });
+
+  it("treats exact NO_REPLY tool output as a quiet cron success when the final assistant is empty", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [{ toolName: "exec" }],
+        messagesSnapshot: [
+          {
+            role: "toolResult",
+            content: [{ type: "text", text: "NO_REPLY" }],
+            details: { aggregated: "NO_REPLY" },
+          } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number],
+          {
+            role: "assistant",
+            stopReason: "stop",
+            provider: "openai",
+            model: "gpt-5.4",
+            content: [],
+          } as unknown as EmbeddedRunAttemptResult["messagesSnapshot"][number],
+        ],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      trigger: "cron",
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-cron-no-reply-empty-final",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    expect(result.payloads).toEqual([{ text: "NO_REPLY" }]);
+    expect(result.meta.livenessState).toBe("working");
+    expect(mockedLog.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("incomplete turn detected"),
+    );
   });
 
   it("uses explicit agentId without a session key before surfacing the strict-agentic blocked state", async () => {
@@ -296,12 +406,51 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     );
   });
 
+  it("returns NO_REPLY without retrying reasoning-only assistant turns when silence is allowed", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [
+            {
+              type: "thinking",
+              thinking: "internal reasoning",
+              thinkingSignature: JSON.stringify({ id: "rs_silent_group", type: "reasoning" }),
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      allowEmptyAssistantReplyAsSilent: true,
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      runId: "run-reasoning-only-silent",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    expect(mockedLog.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("reasoning-only assistant turn detected"),
+    );
+    expect(result.payloads).toEqual([{ text: "NO_REPLY" }]);
+    expect(result.meta.terminalReplyKind).toBe("silent-empty");
+    expect(result.meta.livenessState).toBe("working");
+  });
+
   it("does not retry or warn on reasoning-only turns when a messaging tool already delivered", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(
       makeAttemptResult({
         assistantTexts: [],
         didSendViaMessagingTool: true,
+        messagingToolSentTexts: ["Delivered through the message tool."],
         lastAssistant: {
           role: "assistant",
           stopReason: "stop",
@@ -431,6 +580,60 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
       provider: "openai",
       model: "gpt-5.4",
       runId: "run-empty-response-continuation",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    const secondCall = mockedRunEmbeddedAttempt.mock.calls[1]?.[0] as { prompt?: string };
+    expect(secondCall.prompt).toContain(EMPTY_RESPONSE_RETRY_INSTRUCTION);
+    expect(mockedLog.warn).toHaveBeenCalledWith(expect.stringContaining("empty response detected"));
+  });
+
+  it("retries zero-token empty Claude stop turns with a visible-answer continuation instruction", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "anthropic",
+          model: "claude-opus-4.7",
+          content: [],
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+          },
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Visible Claude answer."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "anthropic",
+          model: "claude-opus-4.7",
+          content: [{ type: "text", text: "Visible Claude answer." }],
+          usage: {
+            input: 100,
+            output: 5,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 105,
+          },
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      provider: "anthropic",
+      model: "claude-opus-4.7",
+      runId: "run-empty-zero-usage-claude-continuation",
     });
 
     expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
@@ -773,6 +976,103 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(retryInstruction).toBe(REASONING_ONLY_RETRY_INSTRUCTION);
   });
 
+  it("does not apply planning-only or ack fast paths to Ollama runs", () => {
+    const retryInstruction = resolvePlanningOnlyRetryInstruction({
+      provider: "ollama",
+      modelId: "gemma4:31b",
+      prompt: "Please inspect the code, make the change, and run the checks.",
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: ["I'll inspect the code, make the change, and run the checks."],
+      }),
+    });
+    const ackInstruction = resolveAckExecutionFastPathInstruction({
+      provider: "ollama",
+      modelId: "gemma4:31b",
+      prompt: "go ahead",
+    });
+
+    expect(retryInstruction).toBeNull();
+    expect(ackInstruction).toBeNull();
+  });
+
+  it("retries signed reasoning-only Ollama turns with a visible-answer continuation instruction", () => {
+    const retryInstruction = resolveReasoningOnlyRetryInstruction({
+      provider: "ollama",
+      modelId: "gemma4:31b",
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "ollama",
+          model: "gemma4:31b",
+          content: [
+            {
+              type: "thinking",
+              thinking: "internal reasoning",
+              thinkingSignature: JSON.stringify({ id: "ollama_rs_helper", type: "reasoning" }),
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    });
+
+    expect(retryInstruction).toBe(REASONING_ONLY_RETRY_INSTRUCTION);
+  });
+
+  it("retries unsigned-thinking Ollama turns via the empty-response path", () => {
+    const retryInstruction = resolveEmptyResponseRetryInstruction({
+      provider: "ollama",
+      modelId: "gemma4:31b",
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "ollama",
+          model: "gemma4:31b",
+          content: [
+            {
+              type: "thinking",
+              thinking: "internal reasoning",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    });
+
+    expect(retryInstruction).toBe(EMPTY_RESPONSE_RETRY_INSTRUCTION);
+  });
+
+  it("retries generic empty Ollama turns without visible text", () => {
+    const retryInstruction = resolveEmptyResponseRetryInstruction({
+      provider: "ollama",
+      modelId: "gemma4:31b",
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "ollama",
+          model: "gemma4:31b",
+          content: [{ type: "text", text: "" }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    });
+
+    expect(retryInstruction).toBe(EMPTY_RESPONSE_RETRY_INSTRUCTION);
+  });
+
   it("treats exact NO_REPLY as a deliberate silent assistant reply", () => {
     const incompleteTurnText = resolveIncompleteTurnPayloadText({
       payloadCount: 0,
@@ -801,7 +1101,7 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(incompleteTurnText).toBeNull();
   });
 
-  it("suppresses the incomplete-turn warning when a messaging tool delivered and the turn ended cleanly", () => {
+  it("suppresses the incomplete-turn warning after committed messaging text delivery", () => {
     const incompleteTurnText = resolveIncompleteTurnPayloadText({
       payloadCount: 0,
       aborted: false,
@@ -809,6 +1109,7 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
       attempt: makeAttemptResult({
         assistantTexts: [],
         didSendViaMessagingTool: true,
+        messagingToolSentTexts: ["Delivered through the message tool."],
         lastAssistant: {
           role: "assistant",
           stopReason: "stop",
@@ -822,7 +1123,80 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(incompleteTurnText).toBeNull();
   });
 
-  it("still surfaces the incomplete-turn warning after a messaging tool when the provider signalled an error", () => {
+  it("suppresses the incomplete-turn warning after committed messaging delivery before end_turn", () => {
+    const incompleteTurnText = resolveIncompleteTurnPayloadText({
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        didSendViaMessagingTool: true,
+        messagingToolSentTexts: ["Delivered through the message tool."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "google",
+          model: "gemini-2.5-pro",
+          content: [
+            {
+              type: "thinking",
+              thinking: "internal reasoning",
+              thinkingSignature: JSON.stringify({ id: "rs_messaging_end_turn", type: "reasoning" }),
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    });
+
+    expect(incompleteTurnText).toBeNull();
+  });
+
+  it("suppresses the incomplete-turn warning after committed media-only messaging delivery", () => {
+    const incompleteTurnText = resolveIncompleteTurnPayloadText({
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        didSendViaMessagingTool: false,
+        messagingToolSentMediaUrls: ["file:///tmp/render.png"],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    });
+
+    expect(incompleteTurnText).toBeNull();
+  });
+
+  it("suppresses the incomplete-turn warning after committed messaging delivery even when the provider errored", () => {
+    const incompleteTurnText = resolveIncompleteTurnPayloadText({
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        didSendViaMessagingTool: true,
+        messagingToolSentTexts: ["Delivered before the provider error."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "error",
+          provider: "ollama",
+          model: "kimi-k2.6:cloud",
+          errorMessage: "provider failed after delivery",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    });
+
+    expect(incompleteTurnText).toBeNull();
+  });
+
+  it("still surfaces the incomplete-turn warning when no messaging delivery was committed", () => {
     const incompleteTurnText = resolveIncompleteTurnPayloadText({
       payloadCount: 0,
       aborted: false,
@@ -842,6 +1216,73 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     });
 
     expect(incompleteTurnText).toContain("verify before retrying");
+  });
+
+  it("does not treat empty committed messaging arrays as user-visible delivery", () => {
+    expect(
+      hasCommittedUserVisibleToolDelivery({
+        messagingToolSentTexts: ["  "],
+        messagingToolSentMediaUrls: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("treats committed messaging media as user-visible delivery", () => {
+    expect(
+      hasCommittedUserVisibleToolDelivery({
+        messagingToolSentTexts: [],
+        messagingToolSentMediaUrls: ["file:///tmp/render.png"],
+      }),
+    ).toBe(true);
+  });
+
+  it("treats committed messaging text as replay-invalid side effect metadata", () => {
+    expect(
+      buildAttemptReplayMetadata({
+        toolMetas: [],
+        didSendViaMessagingTool: false,
+        messagingToolSentTexts: ["Delivered through the message tool."],
+        messagingToolSentMediaUrls: [],
+      }),
+    ).toEqual({ hadPotentialSideEffects: true, replaySafe: false });
+  });
+
+  it("treats committed messaging media as replay-invalid side effect metadata", () => {
+    expect(
+      buildAttemptReplayMetadata({
+        toolMetas: [],
+        didSendViaMessagingTool: false,
+        messagingToolSentTexts: [],
+        messagingToolSentMediaUrls: ["file:///tmp/render.png"],
+      }),
+    ).toEqual({ hadPotentialSideEffects: true, replaySafe: false });
+  });
+
+  it("leaves committed delivery plus tool errors to the tool-error payload path", () => {
+    const incompleteTurnText = resolveIncompleteTurnPayloadText({
+      payloadCount: 0,
+      aborted: false,
+      timedOut: false,
+      attempt: makeAttemptResult({
+        assistantTexts: [],
+        didSendViaMessagingTool: true,
+        messagingToolSentTexts: ["Delivered through the message tool."],
+        lastToolError: {
+          toolName: "message",
+          meta: "send",
+          error: "delivery failed for second target",
+        },
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "error",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    });
+
+    expect(incompleteTurnText).toBeNull();
   });
 
   it("does not retry reasoning-only GPT turns after side effects", () => {
@@ -952,6 +1393,176 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
 
     expect(retryInstruction).toBe(EMPTY_RESPONSE_RETRY_INSTRUCTION);
     expect(DEFAULT_EMPTY_RESPONSE_RETRY_LIMIT).toBe(1);
+  });
+
+  it("treats clean empty assistant turns as silent only when the caller allows it", () => {
+    const attempt = makeAttemptResult({
+      assistantTexts: [],
+      lastAssistant: {
+        role: "assistant",
+        stopReason: "stop",
+        provider: "openai-codex",
+        model: "gpt-5.5",
+        content: [{ type: "text", text: "" }],
+      } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+    });
+
+    expect(
+      shouldTreatEmptyAssistantReplyAsSilent({
+        allowEmptyAssistantReplyAsSilent: true,
+        payloadCount: 0,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBe(true);
+    expect(
+      shouldTreatEmptyAssistantReplyAsSilent({
+        allowEmptyAssistantReplyAsSilent: false,
+        payloadCount: 0,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBe(false);
+  });
+
+  it("treats reasoning-only assistant turns as silent only when the caller allows it", () => {
+    const attempt = makeAttemptResult({
+      assistantTexts: [],
+      lastAssistant: {
+        role: "assistant",
+        stopReason: "end_turn",
+        provider: "openai-codex",
+        model: "gpt-5.5",
+        content: [
+          {
+            type: "thinking",
+            thinking: "internal reasoning",
+            thinkingSignature: JSON.stringify({ id: "rs_silent_helper", type: "reasoning" }),
+          },
+        ],
+      } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+    });
+
+    expect(
+      shouldTreatEmptyAssistantReplyAsSilent({
+        allowEmptyAssistantReplyAsSilent: true,
+        payloadCount: 0,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBe(true);
+    expect(
+      shouldTreatEmptyAssistantReplyAsSilent({
+        allowEmptyAssistantReplyAsSilent: false,
+        payloadCount: 0,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not treat error or side-effect empty turns as silent", () => {
+    const errorAttempt = makeAttemptResult({
+      assistantTexts: [],
+      lastAssistant: {
+        role: "assistant",
+        stopReason: "error",
+        provider: "openai-codex",
+        model: "gpt-5.5",
+        content: [],
+      } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+    });
+    const sideEffectAttempt = makeAttemptResult({
+      assistantTexts: [],
+      didSendViaMessagingTool: true,
+      messagingToolSentTexts: ["sent already"],
+      lastAssistant: {
+        role: "assistant",
+        stopReason: "stop",
+        provider: "openai-codex",
+        model: "gpt-5.5",
+        content: [{ type: "text", text: "" }],
+      } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+    });
+
+    expect(
+      shouldTreatEmptyAssistantReplyAsSilent({
+        allowEmptyAssistantReplyAsSilent: true,
+        payloadCount: 0,
+        aborted: false,
+        timedOut: false,
+        attempt: errorAttempt,
+      }),
+    ).toBe(false);
+    expect(
+      shouldTreatEmptyAssistantReplyAsSilent({
+        allowEmptyAssistantReplyAsSilent: true,
+        payloadCount: 0,
+        aborted: false,
+        timedOut: false,
+        attempt: sideEffectAttempt,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns NO_REPLY without retrying clean empty assistant turns when silence is allowed", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValue(
+      makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [{ type: "text", text: "" }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      allowEmptyAssistantReplyAsSilent: true,
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      runId: "run-empty-assistant-silent",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    expect(result.payloads).toEqual([{ text: "NO_REPLY" }]);
+    expect(result.meta.terminalReplyKind).toBe("silent-empty");
+    expect(result.meta.livenessState).toBe("working");
+  });
+
+  it("keeps retrying and surfacing clean empty assistant turns without the silence flag", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValue(
+      makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [{ type: "text", text: "" }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-empty-assistant-error",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expect(result.payloads?.[0]?.isError).toBe(true);
+    expect(result.payloads?.[0]?.text).toContain("couldn't generate a response");
   });
 
   it("detects generic empty Gemini turns without visible text", () => {
@@ -1109,6 +1720,8 @@ describe("resolvePlanningOnlyRetryInstruction single-action loophole", () => {
       replayMetadata: buildAttemptReplayMetadata({
         toolMetas,
         didSendViaMessagingTool: false,
+        messagingToolSentTexts: [],
+        messagingToolSentMediaUrls: [],
       }),
       clientToolCall: null,
       yieldDetected: false,

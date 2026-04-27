@@ -13,7 +13,7 @@ Gemini Grounding.
 - Provider: `google`
 - Auth: `GEMINI_API_KEY` or `GOOGLE_API_KEY`
 - API: Google Gemini API
-- Runtime option: `agents.defaults.embeddedHarness.runtime: "google-gemini-cli"`
+- Runtime option: `agents.defaults.agentRuntime.id: "google-gemini-cli"`
   reuses Gemini CLI OAuth while keeping model refs canonical as `google/*`.
 
 ## Getting started
@@ -252,8 +252,8 @@ The bundled `google` speech provider uses the Gemini API TTS path with
 
 - Default voice: `Kore`
 - Auth: `messages.tts.providers.google.apiKey`, `models.providers.google.apiKey`, `GEMINI_API_KEY`, or `GOOGLE_API_KEY`
-- Output: WAV for regular TTS attachments, PCM for Talk/telephony
-- Native voice-note output: not supported on this Gemini API path because the API returns PCM rather than Opus
+- Output: WAV for regular TTS attachments, Opus for voice-note targets, PCM for Talk/telephony
+- Voice-note output: Google PCM is wrapped as WAV and transcoded to 48 kHz Opus with `ffmpeg`
 
 To use Google as the default TTS provider:
 
@@ -267,6 +267,7 @@ To use Google as the default TTS provider:
         google: {
           model: "gemini-3.1-flash-tts-preview",
           voiceName: "Kore",
+          audioProfile: "Speak professionally with a calm tone.",
         },
       },
     },
@@ -274,9 +275,14 @@ To use Google as the default TTS provider:
 }
 ```
 
-Gemini API TTS accepts expressive square-bracket audio tags in the text, such as
-`[whispers]` or `[laughs]`. To keep tags out of the visible chat reply while
-sending them to TTS, put them inside a `[[tts:text]]...[[/tts:text]]` block:
+Gemini API TTS uses natural-language prompting for style control. Set
+`audioProfile` to prepend a reusable style prompt before the spoken text. Set
+`speakerName` when your prompt text refers to a named speaker.
+
+Gemini API TTS also accepts expressive square-bracket audio tags in the text,
+such as `[whispers]` or `[laughs]`. To keep tags out of the visible chat reply
+while sending them to TTS, put them inside a `[[tts:text]]...[[/tts:text]]`
+block:
 
 ```text
 Here is the clean reply text.
