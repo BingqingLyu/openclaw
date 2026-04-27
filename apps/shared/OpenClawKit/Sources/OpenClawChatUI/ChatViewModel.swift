@@ -42,6 +42,7 @@ public final class OpenClawChatViewModel {
 
     @ObservationIgnored
     private nonisolated(unsafe) var eventTask: Task<Void, Never>?
+    private var hasLoadedInitialState = false
     private var pendingRuns = Set<String>() {
         didSet { self.pendingRunCount = self.pendingRuns.count }
     }
@@ -106,6 +107,8 @@ public final class OpenClawChatViewModel {
     }
 
     public func load() {
+        guard !self.hasLoadedInitialState else { return }
+        self.hasLoadedInitialState = true
         Task { await self.bootstrap() }
     }
 
@@ -247,6 +250,7 @@ public final class OpenClawChatViewModel {
             await self.fetchModels()
             self.errorText = nil
         } catch {
+            self.hasLoadedInitialState = false
             self.errorText = error.localizedDescription
             chatUILogger.error("bootstrap failed \(error.localizedDescription, privacy: .public)")
         }
@@ -559,8 +563,10 @@ public final class OpenClawChatViewModel {
                 attachments: encodedAttachments)
             if response.runId != runId {
                 self.clearPendingRun(runId)
-                self.pendingRuns.insert(response.runId)
-                self.armPendingRunTimeout(runId: response.runId)
+                if Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey) {
+                    self.pendingRuns.insert(response.runId)
+                    self.armPendingRunTimeout(runId: response.runId)
+                }
             }
         } catch {
             self.clearPendingRun(runId)
@@ -611,6 +617,9 @@ public final class OpenClawChatViewModel {
         let next = sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !next.isEmpty else { return }
         guard next != self.sessionKey else { return }
+        self.clearPendingRuns(reason: nil)
+        self.pendingToolCallsById = [:]
+        self.streamingAssistantText = nil
         self.sessionKey = next
         self.modelSelectionID = Self.defaultModelSelectionID
         await self.bootstrap()
@@ -971,11 +980,24 @@ public final class OpenClawChatViewModel {
             return
         }
         if !isOurRun {
-            // Keep multiple clients in sync: if another client finishes a run for our session, refresh history.
+            // Keep multiple clients in sync: if another client finishes a run for our session,
+            // surface the final message immediately when possible and reconcile with history in background.
+            let shouldResetExternalLiveState = self.pendingRuns.isEmpty
             switch chat.state {
-            case "final", "aborted", "error":
-                self.streamingAssistantText = nil
-                self.pendingToolCallsById = [:]
+            case "final", "aborted":
+                if shouldResetExternalLiveState {
+                    self.streamingAssistantText = nil
+                    self.pendingToolCallsById = [:]
+                    if let message = self.decodedAssistantMessage(from: chat.message) {
+                        self.messages.append(message)
+                    }
+                }
+                Task { await self.refreshHistoryAfterRun() }
+            case "error":
+                if shouldResetExternalLiveState {
+                    self.streamingAssistantText = nil
+                    self.pendingToolCallsById = [:]
+                }
                 Task { await self.refreshHistoryAfterRun() }
             default:
                 break
@@ -993,6 +1015,8 @@ public final class OpenClawChatViewModel {
             } else if self.pendingRuns.count <= 1 {
                 self.clearPendingRuns(reason: nil)
             }
+
+            _ = self.appendFinalAssistantMessage(from: chat)
             self.pendingToolCallsById = [:]
             self.streamingAssistantText = nil
             Task { await self.refreshHistoryAfterRun() }
@@ -1016,10 +1040,79 @@ public final class OpenClawChatViewModel {
         return false
     }
 
-    private func handleAgentEvent(_ evt: OpenClawAgentEventPayload) {
-        if let sessionId, evt.runId != sessionId {
-            return
+    private func shouldAcceptAgentEvent(_ evt: OpenClawAgentEventPayload) -> Bool {
+        // Our own run's events are accepted only while they still belong to the
+        // currently selected session. Session switches clear pendingRuns, but an
+        // in-flight send can still remap to the server runId after the switch.
+        if self.pendingRuns.contains(evt.runId) {
+            guard let sessionKey = evt.sessionKey else { return true }
+            return Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
         }
+        // Session-key-matched events are accepted only when no local run is
+        // pending.  While a local run is in flight, another client's events
+        // for the same session would overwrite our streaming UI.
+        if let sessionKey = evt.sessionKey,
+           Self.matchesCurrentSessionKey(incoming: sessionKey, current: self.sessionKey)
+        {
+            return self.pendingRuns.isEmpty
+        }
+        if let sessionId {
+            return evt.runId == sessionId
+        }
+        return false
+    }
+
+    private func decodedAssistantMessage(from raw: AnyCodable?) -> OpenClawChatMessage? {
+        guard let raw else { return nil }
+        guard let decoded = try? ChatPayloadDecoding.decode(raw, as: OpenClawChatMessage.self) else {
+            return nil
+        }
+        let sanitized = Self.stripInboundMetadata(from: decoded)
+        guard sanitized.role.lowercased() == "assistant" else { return nil }
+        return sanitized
+    }
+
+    private func streamedAssistantMessage() -> OpenClawChatMessage? {
+        guard let text = self.streamingAssistantText,
+              AssistantTextParser.hasVisibleContent(in: text, includeThinking: false)
+        else {
+            return nil
+        }
+        return OpenClawChatMessage(
+            id: UUID(),
+            role: "assistant",
+            content: [
+                OpenClawChatMessageContent(
+                    type: "text",
+                    text: text,
+                    thinking: nil,
+                    thinkingSignature: nil,
+                    mimeType: nil,
+                    fileName: nil,
+                    content: nil,
+                    id: nil,
+                    name: nil,
+                    arguments: nil),
+            ],
+            timestamp: Date().timeIntervalSince1970 * 1000)
+    }
+
+    @discardableResult
+    private func appendFinalAssistantMessage(from chat: OpenClawChatEventPayload) -> Bool {
+        if let message = self.decodedAssistantMessage(from: chat.message) {
+            self.messages.append(message)
+            return true
+        }
+        guard chat.state != "error" else { return false }
+        if let streamed = self.streamedAssistantMessage() {
+            self.messages.append(streamed)
+            return true
+        }
+        return false
+    }
+
+    private func handleAgentEvent(_ evt: OpenClawAgentEventPayload) {
+        guard self.shouldAcceptAgentEvent(evt) else { return }
 
         switch evt.stream {
         case "assistant":
