@@ -29,6 +29,7 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "openclaw/plugin-sdk/text-runtime";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import type { ResolvedSlackAccount } from "../../accounts.js";
 import { reactSlackMessage } from "../../actions.js";
 import { formatSlackFileReference } from "../../file-reference.js";
@@ -391,6 +392,28 @@ export async function prepareSlackMessage(params: {
     : true;
   if (isRoom && !channelUserAuthorized) {
     logVerbose(`Blocked unauthorized slack sender ${senderId} (not in channel users)`);
+    return null;
+  }
+
+  if (
+    (isRoom || isGroupDm) &&
+    resolveNeverReply({ cfg: ctx.cfg, channel: "slack", accountId: account.accountId })
+  ) {
+    logVerbose("slack: group message stored for context (neverReply: true)");
+    const pendingText = (message.text ?? "").trim();
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: ctx.channelHistories,
+      historyKey,
+      limit: ctx.historyLimit,
+      entry: pendingText
+        ? {
+            sender: await resolveSenderName(),
+            body: pendingText,
+            timestamp: message.ts ? Math.round(Number(message.ts) * 1000) : undefined,
+            messageId: message.ts,
+          }
+        : null,
+    });
     return null;
   }
 

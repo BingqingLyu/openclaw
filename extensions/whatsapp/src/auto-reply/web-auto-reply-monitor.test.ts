@@ -518,6 +518,33 @@ describe("applyGroupGating", () => {
     expect(result.shouldProcess).toBe(true);
   });
 
+  it("returns shouldProcess false when neverReply is set on whatsapp channel config", async () => {
+    const cfg = makeConfig({
+      channels: {
+        whatsapp: {
+          neverReply: true,
+          allowFrom: ["*"],
+          groups: { "*": { requireMention: false } },
+        },
+      },
+    });
+
+    const { result, groupHistories } = await runGroupGating({
+      cfg,
+      msg: createGroupMessage(),
+    });
+
+    expect(result.shouldProcess).toBe(false);
+
+    // Verify history was recorded with correct content
+    const entries = groupHistories.get("whatsapp:default:group:123@g.us");
+    expect(entries).toHaveLength(1);
+    expect(entries![0]).toMatchObject({
+      sender: "Alice (+111)",
+      body: "hello group",
+    });
+  });
+
   it("blocks group messages when whatsapp groups is set without a wildcard", async () => {
     const cfg = makeConfig({
       channels: {

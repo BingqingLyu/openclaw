@@ -68,6 +68,7 @@ function buildWhatsAppCommonShape(params: { useDefaults: boolean }) {
       ? GroupPolicySchema.optional().default("allowlist")
       : GroupPolicySchema.optional(),
     contextVisibility: ContextVisibilityModeSchema.optional(),
+    neverReply: z.boolean().optional(),
     historyLimit: z.number().int().min(0).optional(),
     dmHistoryLimit: z.number().int().min(0).optional(),
     dms: z.record(z.string(), DmConfigSchema.optional()).optional(),

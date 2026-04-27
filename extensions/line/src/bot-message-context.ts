@@ -459,7 +459,7 @@ export async function buildLineMessageContext(params: BuildLineMessageContextPar
     });
   }
 
-  const historyKey = isGroup ? peerId : undefined;
+  const historyKey = isGroup ? `${account.accountId}:${peerId}` : undefined;
   const inboundHistory =
     historyKey && groupHistories && (historyLimit ?? 0) > 0
       ? (groupHistories.get(historyKey) ?? []).map((entry) => ({

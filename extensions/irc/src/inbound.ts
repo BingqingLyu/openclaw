@@ -3,6 +3,7 @@ import {
   readStoreAllowFromForDmPolicy,
   resolveEffectiveAllowFromLists,
 } from "openclaw/plugin-sdk/channel-policy";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-auth";
 import {
   GROUP_POLICY_BLOCKED_LABEL,
@@ -12,6 +13,13 @@ import {
   warnMissingProviderGroupPolicyFallbackOnce,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/config-runtime";
+import {
+  type HistoryEntry,
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  recordPendingHistoryEntryIfEnabled,
+} from "openclaw/plugin-sdk/irc";
 import {
   deliverFormattedTextWithAttachments,
   type OutboundReplyPayload,
@@ -35,6 +43,7 @@ import { sendMessageIrc } from "./send.js";
 import type { CoreConfig, IrcInboundMessage } from "./types.js";
 
 const CHANNEL_ID = "irc" as const;
+const channelHistories = new Map<string, HistoryEntry[]>();
 
 const escapeIrcRegexLiteral = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -150,6 +159,32 @@ export async function handleIrcInbound(params: {
     const groupAccess = resolveIrcGroupAccessGate({ groupPolicy, groupMatch });
     if (!groupAccess.allowed) {
       runtime.log?.(`irc: drop channel ${message.target} (${groupAccess.reason})`);
+      return;
+    }
+    if (
+      resolveNeverReply({
+        cfg: config as OpenClawConfig,
+        channel: "irc",
+        accountId: account.accountId,
+      })
+    ) {
+      runtime.log?.("irc: group message stored for context (neverReply: true)");
+      const historyKey = `${account.accountId}:${message.target}`;
+      const historyLimit =
+        (config as OpenClawConfig).messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT;
+      recordPendingHistoryEntryIfEnabled({
+        historyMap: channelHistories,
+        historyKey,
+        limit: historyLimit,
+        entry: rawBody
+          ? {
+              sender: senderDisplay,
+              body: rawBody,
+              timestamp: message.timestamp,
+              messageId: message.messageId ?? undefined,
+            }
+          : null,
+      });
       return;
     }
   }
@@ -311,8 +346,27 @@ export async function handleIrcInbound(params: {
 
   const groupSystemPrompt = normalizeOptionalString(groupMatch.groupConfig?.systemPrompt);
 
+  const historyLimit =
+    (config as OpenClawConfig).messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT;
+  const historyKey = `${account.accountId}:${message.target}`;
+  const combinedBody = message.isGroup
+    ? buildPendingHistoryContextFromMap({
+        historyMap: channelHistories,
+        historyKey,
+        limit: historyLimit,
+        currentMessage: body,
+        formatEntry: (entry) =>
+          core.channel.reply.formatAgentEnvelope({
+            channel: "IRC",
+            from: fromLabel,
+            timestamp: entry.timestamp,
+            body: entry.body,
+          }),
+      })
+    : body;
+
   const ctxPayload = core.channel.reply.finalizeInboundContext({
-    Body: body,
+    Body: combinedBody,
     RawBody: rawBody,
     CommandBody: rawBody,
     From: message.isGroup ? `irc:channel:${message.target}` : `irc:${senderDisplay}`,
@@ -369,6 +423,13 @@ export async function handleIrcInbound(params: {
           : undefined,
     },
   });
+  if (message.isGroup) {
+    clearHistoryEntriesIfEnabled({
+      historyMap: channelHistories,
+      historyKey,
+      limit: historyLimit,
+    });
+  }
 }
 
 export const __testing = {

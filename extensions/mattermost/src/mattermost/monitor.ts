@@ -1,4 +1,5 @@
 import { deliverFinalizableDraftPreview } from "openclaw/plugin-sdk/channel-lifecycle";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { createClaimableDedupe, type ClaimableDedupe } from "openclaw/plugin-sdk/persistent-dedupe";
 import { isReasoningReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import { isPrivateNetworkOptInEnabled } from "openclaw/plugin-sdk/ssrf-runtime";
@@ -1408,6 +1409,15 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
                 : null,
           });
         };
+
+        if (
+          kind !== "direct" &&
+          resolveNeverReply({ cfg, channel: "mattermost", accountId: account.accountId })
+        ) {
+          logVerboseMessage("mattermost: group message stored for context (neverReply: true)");
+          recordPendingHistory();
+          return;
+        }
 
         const oncharEnabled = account.chatmode === "onchar" && kind !== "direct";
         const oncharPrefixes = oncharEnabled ? resolveOncharPrefixes(account.oncharPrefixes) : [];

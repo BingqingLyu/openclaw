@@ -55,6 +55,7 @@ export type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 export { createChannelReplyPipeline } from "./channel-reply-pipeline.js";
 export type { OpenClawConfig } from "../config/config.js";
 export { isDangerousNameMatchingEnabled } from "../config/dangerous-name-matching.js";
+export { resolveNeverReply } from "../config/group-policy.js";
 export { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 export {
   resolveAllowlistProviderRuntimeGroupPolicy,

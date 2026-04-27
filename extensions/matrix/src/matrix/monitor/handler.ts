@@ -3,6 +3,13 @@ import {
   evaluateSupplementalContextVisibility,
   resolveChannelContextVisibilityMode,
 } from "openclaw/plugin-sdk/context-visibility-runtime";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
+import {
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  recordPendingHistoryEntryIfEnabled,
+} from "openclaw/plugin-sdk/reply-history";
 import {
   loadSessionStore,
   resolveSessionStoreEntry,
@@ -147,6 +154,8 @@ async function redactMatrixDraftEvent(
 function buildMatrixFinalizedPreviewContent(): Record<string, unknown> {
   return { [MATRIX_OPENCLAW_FINALIZED_PREVIEW_KEY]: true };
 }
+
+const roomHistories = new Map<string, HistoryEntry[]>();
 
 export type MatrixMonitorHandlerParams = {
   client: MatrixClient;
@@ -828,6 +837,29 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           return undefined;
         }
 
+        if (isRoom && resolveNeverReply({ cfg, channel: "matrix", accountId })) {
+          logVerboseMessage("matrix: group message stored for context (neverReply: true)");
+          const historyBody =
+            locationPayload?.text ?? (typeof content.body === "string" ? content.body.trim() : "");
+          const historyKey = `${accountId}:${roomId}`;
+          const senderName = await getSenderName();
+          recordPendingHistoryEntryIfEnabled({
+            historyMap: roomHistories,
+            historyKey,
+            limit: historyLimit,
+            entry: historyBody
+              ? {
+                  sender: senderName || senderId,
+                  body: historyBody,
+                  timestamp: eventTs ?? undefined,
+                  messageId: event.event_id ?? undefined,
+                }
+              : null,
+          });
+          await commitInboundEventIfClaimed();
+          return undefined;
+        }
+
         let pollSnapshotPromise: Promise<MatrixPollSnapshot | null> | null = null;
         const getPollSnapshot = async (): Promise<MatrixPollSnapshot | null> => {
           if (!isPollEvent) {
@@ -1279,9 +1311,27 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         envelope: envelopeOptions,
         body: textWithId,
       });
+      const combinedHistoryKey = `${accountId}:${roomId}`;
+      const combinedBody = isRoom
+        ? buildPendingHistoryContextFromMap({
+            historyMap: roomHistories,
+            historyKey: combinedHistoryKey,
+            limit: historyLimit,
+            currentMessage: body,
+            formatEntry: (entry) =>
+              core.channel.reply.formatInboundEnvelope({
+                channel: "Matrix",
+                from: envelopeFrom,
+                timestamp: entry.timestamp,
+                body: entry.body,
+                senderLabel: entry.sender,
+              }),
+          })
+        : body;
+
       const groupSystemPrompt = normalizeOptionalString(roomConfig?.systemPrompt);
       const ctxPayload = core.channel.reply.finalizeInboundContext({
-        Body: body,
+        Body: combinedBody,
         RawBody: bodyText,
         CommandBody: commandBodyText,
         BodyForAgent: bodyText,
@@ -1833,8 +1883,22 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         roomHistoryTracker.consumeHistory(_route.agentId, roomId, triggerSnapshot, _messageId);
       }
       if (!queuedFinal) {
+        if (isRoom) {
+          clearHistoryEntriesIfEnabled({
+            historyMap: roomHistories,
+            historyKey: combinedHistoryKey,
+            limit: historyLimit,
+          });
+        }
         await commitInboundEventIfClaimed();
         return;
+      }
+      if (isRoom) {
+        clearHistoryEntriesIfEnabled({
+          historyMap: roomHistories,
+          historyKey: combinedHistoryKey,
+          limit: historyLimit,
+        });
       }
       const finalCount = counts.final;
       logVerboseMessage(

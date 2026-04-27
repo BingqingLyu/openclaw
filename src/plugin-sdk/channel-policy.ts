@@ -38,6 +38,7 @@ export { buildAccountScopedDmSecurityPolicy } from "../channels/plugins/helpers.
 export {
   resolveChannelGroupRequireMention,
   resolveChannelGroupToolsPolicy,
+  resolveNeverReply,
   resolveToolsBySender,
 } from "../config/group-policy.js";
 export {

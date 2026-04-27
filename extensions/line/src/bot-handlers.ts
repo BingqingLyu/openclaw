@@ -5,6 +5,7 @@ import {
   resolveInboundMentionDecision,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { createChannelPairingChallengeIssuer } from "openclaw/plugin-sdk/channel-pairing";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { hasControlCommand, resolveControlCommandGate } from "openclaw/plugin-sdk/command-auth";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import {
@@ -431,6 +432,30 @@ async function handleMessageEvent(event: MessageEvent, context: LineHandlerConte
   }
 
   const { isGroup, groupId, roomId } = getLineSourceInfo(event.source);
+
+  if (isGroup && resolveNeverReply({ cfg, channel: "line", accountId: account.accountId })) {
+    logVerbose("line: group message stored for context (neverReply: true)");
+    const rawKey = groupId ?? roomId;
+    const historyKey = rawKey ? `${account.accountId}:${rawKey}` : undefined;
+    const rawText = message.type === "text" ? message.text : "";
+    const senderId =
+      event.source?.type === "group" || event.source?.type === "room"
+        ? (event.source?.userId ?? "unknown")
+        : "unknown";
+    if (historyKey && context.groupHistories) {
+      recordPendingHistoryEntryIfEnabled({
+        historyMap: context.groupHistories,
+        historyKey,
+        limit: context.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT,
+        entry: {
+          sender: `user:${senderId}`,
+          body: rawText || `<${message.type}>`,
+          timestamp: event.timestamp,
+        },
+      });
+    }
+    return;
+  }
   if (isGroup) {
     const groupConfig = resolveLineGroupConfig({ config: account.config, groupId, roomId });
     const requireMention = groupConfig?.requireMention !== false;
@@ -465,8 +490,12 @@ async function handleMessageEvent(event: MessageEvent, context: LineHandlerConte
     });
     if (mentionDecision.shouldSkip) {
       logVerbose(`line: skipping group message (requireMention, not mentioned)`);
-      const historyKey = groupId ?? roomId;
-      const senderId = sourceInfo.userId ?? "unknown";
+      const rawHistKey = groupId ?? roomId;
+      const historyKey = rawHistKey ? `${account.accountId}:${rawHistKey}` : undefined;
+      const senderId =
+        event.source?.type === "group" || event.source?.type === "room"
+          ? (event.source?.userId ?? "unknown")
+          : "unknown";
       if (historyKey && context.groupHistories) {
         recordPendingHistoryEntryIfEnabled({
           historyMap: context.groupHistories,
@@ -520,7 +549,8 @@ async function handleMessageEvent(event: MessageEvent, context: LineHandlerConte
   await processMessage(messageContext);
 
   if (isGroup && context.groupHistories) {
-    const historyKey = groupId ?? roomId;
+    const clearRawKey = groupId ?? roomId;
+    const historyKey = clearRawKey ? `${account.accountId}:${clearRawKey}` : undefined;
     if (historyKey && context.groupHistories.has(historyKey)) {
       clearHistoryEntriesIfEnabled({
         historyMap: context.groupHistories,

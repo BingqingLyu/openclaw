@@ -21,6 +21,7 @@ import {
   recordPendingHistoryEntryIfEnabled,
   type HistoryEntry,
 } from "openclaw/plugin-sdk/reply-history";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-runtime";
 import { resolveAgentRoute } from "openclaw/plugin-sdk/routing";
 import {
@@ -413,6 +414,27 @@ export function resolveIMessageInboundDecision(params: {
   const historyKey = isGroup
     ? String(chatId ?? chatGuid ?? chatIdentifier ?? "unknown")
     : undefined;
+
+  if (
+    isGroup &&
+    resolveNeverReply({ cfg: params.cfg, channel: "imessage", accountId: params.accountId })
+  ) {
+    params.logVerbose?.("imessage: group message stored for context (neverReply: true)");
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: params.groupHistories,
+      historyKey: historyKey ?? "",
+      limit: params.historyLimit,
+      entry: historyKey
+        ? {
+            sender: senderNormalized,
+            body: bodyText,
+            timestamp: createdAt,
+            messageId: params.message.id ? String(params.message.id) : undefined,
+          }
+        : null,
+    });
+    return { kind: "drop", reason: "neverReply" };
+  }
 
   const mentioned = isGroup ? matchesMentionPatterns(messageText, mentionRegexes) : true;
   const requireMention = resolveChannelGroupRequireMention({

@@ -8,6 +8,7 @@ import {
   matchesMentionWithExplicit,
   resolveInboundMentionDecision,
 } from "openclaw/plugin-sdk/channel-inbound";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-auth-native";
 import { hasControlCommand } from "openclaw/plugin-sdk/command-detection";
 import { shouldHandleTextCommands } from "openclaw/plugin-sdk/command-surface";
@@ -867,6 +868,20 @@ export async function preflightDiscordMessage(
           messageId: message.id,
         } satisfies HistoryEntry)
       : undefined;
+
+  if (
+    isGuildMessage &&
+    resolveNeverReply({ cfg: params.cfg, channel: "discord", accountId: resolvedAccountId })
+  ) {
+    logDebug("[discord-preflight] group message stored for context (neverReply: true)");
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: params.guildHistories,
+      historyKey: messageChannelId,
+      limit: params.historyLimit,
+      entry: historyEntry ?? null,
+    });
+    return null;
+  }
 
   const threadOwnerId = threadChannel
     ? (resolveDiscordChannelInfoSafe(threadChannel).ownerId ?? channelInfo?.ownerId)

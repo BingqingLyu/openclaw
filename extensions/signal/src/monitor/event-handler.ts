@@ -33,6 +33,7 @@ import {
   clearHistoryEntriesIfEnabled,
   recordPendingHistoryEntryIfEnabled,
 } from "openclaw/plugin-sdk/reply-history";
+import { resolveNeverReply } from "openclaw/plugin-sdk/channel-policy";
 import { dispatchInboundMessage } from "openclaw/plugin-sdk/reply-runtime";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-runtime";
 import { createReplyDispatcherWithTyping } from "openclaw/plugin-sdk/reply-runtime";
@@ -628,6 +629,26 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
         }
         return;
       }
+    }
+    if (
+      isGroup &&
+      resolveNeverReply({ cfg: deps.cfg, channel: "signal", accountId: deps.accountId })
+    ) {
+      logVerbose("signal: group message stored for context (neverReply: true)");
+      const historyKey = groupId ?? "unknown";
+      recordPendingHistoryEntryIfEnabled({
+        historyMap: deps.groupHistories,
+        historyKey,
+        limit: deps.historyLimit,
+        entry: {
+          sender: envelope.sourceName ?? senderDisplay,
+          body: messageText,
+          timestamp: envelope.timestamp ?? undefined,
+          messageId:
+            typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined,
+        },
+      });
+      return;
     }
 
     const useAccessGroups = deps.cfg.commands?.useAccessGroups !== false;

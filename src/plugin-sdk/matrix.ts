@@ -29,6 +29,13 @@ export {
   readStringParam,
 } from "../agents/tools/common.js";
 export type { BlockReplyContext } from "../auto-reply/get-reply-options.types.js";
+export type { HistoryEntry } from "../auto-reply/reply/history.js";
+export {
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  recordPendingHistoryEntryIfEnabled,
+} from "../auto-reply/reply/history.js";
 export type { ReplyPayload } from "./reply-payload.js";
 export { resolveAckReaction } from "../agents/identity.js";
 export {
@@ -114,6 +121,7 @@ export {
   resolveDefaultGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
 } from "../config/runtime-group-policy.js";
+export { resolveNeverReply } from "../config/group-policy.js";
 export type {
   ContextVisibilityMode,
   DmPolicy,

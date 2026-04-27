@@ -2,6 +2,13 @@
 // Keep this list additive and scoped to the bundled Zalo surface.
 
 export { jsonResult, readStringParam } from "../agents/tools/common.js";
+export type { HistoryEntry } from "../auto-reply/reply/history.js";
+export {
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  recordPendingHistoryEntryIfEnabled,
+} from "../auto-reply/reply/history.js";
 export type { ReplyPayload } from "./reply-payload.js";
 export {
   deleteAccountFromConfigSection,
@@ -42,6 +49,7 @@ export {
   resolveOpenProviderRuntimeGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
 } from "../config/runtime-group-policy.js";
+export { resolveNeverReply } from "../config/group-policy.js";
 export type { GroupPolicy, MarkdownTableMode } from "../config/types.js";
 export type { SecretInput } from "./secret-input.js";
 export {
