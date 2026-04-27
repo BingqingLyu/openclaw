@@ -575,6 +575,21 @@ describe("normalizeCronJobCreate", () => {
     expect(payload).not.toHaveProperty("text");
   });
 
+  it("promotes top-level text to agentTurn on create when model is present", () => {
+    const normalized = normalizeCronJobCreate({
+      name: "daily-sync",
+      schedule: { kind: "cron", expr: "30 17 * * *" },
+      text: "Run daily sync",
+      model: "anthropic/claude-sonnet-4-6",
+    }) as unknown as Record<string, unknown>;
+
+    const payload = normalized.payload as Record<string, unknown>;
+    expect(payload.kind).toBe("agentTurn");
+    expect(payload.message).toBe("Run daily sync");
+    expect(payload.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(payload).not.toHaveProperty("text");
+  });
+
   it("resolves current sessionTarget to a persistent session when context is available", () => {
     const normalized = normalizeCronJobCreate(
       {
@@ -825,6 +840,20 @@ describe("normalizeCronJobPatch", () => {
         text: "Run daily sync",
         model: "anthropic/claude-sonnet-4-6",
       },
+    }) as unknown as Record<string, unknown>;
+
+    const payload = normalized.payload as Record<string, unknown>;
+    expect(payload.kind).toBe("agentTurn");
+    expect(payload.message).toBe("Run daily sync");
+    expect(payload.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(payload).not.toHaveProperty("text");
+    expect(validateCronUpdateParams({ id: "job-1", patch: normalized })).toBe(true);
+  });
+
+  it("promotes top-level text to agentTurn on patch when model is present", () => {
+    const normalized = normalizeCronJobPatch({
+      text: "Run daily sync",
+      model: "anthropic/claude-sonnet-4-6",
     }) as unknown as Record<string, unknown>;
 
     const payload = normalized.payload as Record<string, unknown>;
