@@ -65,6 +65,23 @@ describe("resolveOpenClawAgentDir", () => {
     });
   });
 
+  it("uses OPENCLAW_DEFAULT_AGENT_ID to set the bootstrap path when no dir override is set", async () => {
+    await withTempStateDir((stateDir) => {
+      withEnv(
+        {
+          OPENCLAW_STATE_DIR: stateDir,
+          OPENCLAW_AGENT_DIR: undefined,
+          PI_CODING_AGENT_DIR: undefined,
+          OPENCLAW_DEFAULT_AGENT_ID: "ops",
+        },
+        () => {
+          const resolved = resolveOpenClawAgentDir();
+          expect(resolved).toBe(path.join(stateDir, "agents", "ops", "agent"));
+        },
+      );
+    });
+  });
+
   it("prefers OPENCLAW_AGENT_DIR over PI_CODING_AGENT_DIR when both are set", async () => {
     await withTempStateDir((stateDir) => {
       const primaryOverride = path.join(stateDir, "primary-agent");
