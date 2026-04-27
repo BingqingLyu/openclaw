@@ -221,6 +221,11 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
     let lastFrameType: string | undefined;
     let lastFrameMethod: string | undefined;
     let lastFrameId: string | undefined;
+    const pingTimer = setInterval(() => {
+      try {
+        socket.ping();
+      } catch {}
+    }, 25_000);
 
     const setCloseCause = (cause: string, meta?: Record<string, unknown>) => {
       if (!closeCause) {
@@ -268,6 +273,7 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       }
       closed = true;
       clearTimeout(handshakeTimer);
+      clearInterval(pingTimer);
       releasePreauthBudget();
       if (client) {
         clients.delete(client);
