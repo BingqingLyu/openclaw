@@ -349,4 +349,75 @@ describe("bot-native-command-menu", () => {
       "Telegram rejected 10 commands (BOT_COMMANDS_TOO_MUCH); retrying with 8.",
     );
   });
+
+  it("retries setMyCommands after a 429 rate-limit using the retry_after delay", async () => {
+    vi.useFakeTimers();
+    const deleteMyCommands = vi.fn(async () => undefined);
+    const rateLimitError = Object.assign(new Error("429: Too Many Requests: retry after 5"), {
+      error_code: 429,
+      description: "Too Many Requests: retry after 5",
+    });
+    const setMyCommands = vi
+      .fn()
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValue(undefined);
+    const runtimeLog = vi.fn();
+    const runtimeError = vi.fn();
+
+    syncMenuCommandsWithMocks({
+      deleteMyCommands,
+      setMyCommands,
+      runtimeLog,
+      runtimeError,
+      commandsToRegister: [{ command: "help", description: "Help" }],
+      accountId: `test-ratelimit-${Date.now()}`,
+      botIdentity: "bot-ratelimit",
+    });
+
+    await vi.waitFor(() => expect(setMyCommands).toHaveBeenCalledTimes(1));
+    // Advance past the 5-second retry_after delay after the retry timer is actually scheduled.
+    await vi.runOnlyPendingTimersAsync();
+
+    await vi.waitFor(() => expect(setMyCommands).toHaveBeenCalledTimes(2));
+    expect(runtimeLog).toHaveBeenCalledWith(
+      expect.stringContaining("rate-limited (retry after 5s)"),
+    );
+    expect(runtimeError).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("gives up setMyCommands after exhausting 429 rate-limit retries", async () => {
+    vi.useFakeTimers();
+    const deleteMyCommands = vi.fn(async () => undefined);
+    const rateLimitError = Object.assign(new Error("429: Too Many Requests: retry after 2"), {
+      error_code: 429,
+      description: "Too Many Requests: retry after 2",
+    });
+    const setMyCommands = vi.fn().mockRejectedValue(rateLimitError);
+    const runtimeLog = vi.fn();
+    const runtimeError = vi.fn();
+
+    syncMenuCommandsWithMocks({
+      deleteMyCommands,
+      setMyCommands,
+      runtimeLog,
+      runtimeError,
+      commandsToRegister: [{ command: "help", description: "Help" }],
+      accountId: `test-ratelimit-exhaust-${Date.now()}`,
+      botIdentity: "bot-exhaust",
+    });
+
+    // The first call happens before any retry timer is scheduled.
+    await vi.waitFor(() => expect(setMyCommands).toHaveBeenCalledTimes(1));
+    // Each retry schedules one timer; drain them one round at a time.
+    for (let i = 0; i < 3; i++) {
+      await vi.runOnlyPendingTimersAsync();
+    }
+    vi.useRealTimers();
+
+    await vi.waitFor(() => expect(setMyCommands).toHaveBeenCalledTimes(4));
+    expect(runtimeError).toHaveBeenCalledWith(
+      expect.stringContaining("rate-limited after 3 retries"),
+    );
+  });
 });
