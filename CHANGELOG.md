@@ -236,6 +236,7 @@ Docs: https://docs.openclaw.ai
 - Docker/update smoke: keep the package-derived update-channel fixture on package-shipped files and make its UI build stub create the asset the updater verifies. Thanks @vincentkoc.
 - Gateway/models: repair legacy `models.providers.*.api = "openai"` config values to `openai-completions`, and skip providers with future stale API enum values during startup instead of bricking the gateway. Fixes #72477. (#72542) Thanks @JooyoungChoi14 and @obviyus.
 - Gateway/skills: redact `apiKey` and secret-named `env` values from the `skills.update` RPC response to prevent leaking credentials into WebSocket traffic, client logs, or session transcripts. Config is still written to disk in full; only the response payload is redacted. (#69998) Thanks @Ziy1-Tan.
+- Media/host-read: allow host-local `filePath` sends for HTML, XML, and CSS documents via the existing validated-text fallback path, so these text-based files no longer get rejected just because `detectMime` finds no magic bytes. (#66551) Thanks @yosit.
 
 ## 2026.4.26
 
