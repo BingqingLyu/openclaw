@@ -55,6 +55,7 @@ export * from "../infra/file-lock.js";
 export * from "../infra/format-time/format-duration.ts";
 export * from "../infra/fs-safe.ts";
 export * from "../infra/heartbeat-events.ts";
+export { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 export * from "../infra/heartbeat-summary.ts";
 export * from "../infra/heartbeat-visibility.ts";
 export * from "../infra/home-dir.js";
