@@ -10,6 +10,7 @@ import {
   consultOpenClawAgentForGoogleMeet,
   GOOGLE_MEET_AGENT_CONSULT_TOOL_NAME,
   resolveGoogleMeetRealtimeTools,
+  submitGoogleMeetConsultWorkingResponse,
 } from "./agent-consult.js";
 import type { GoogleMeetConfig } from "./config.js";
 import { resolveGoogleMeetRealtimeProvider } from "./realtime.js";
@@ -50,10 +51,12 @@ export async function startNodeRealtimeAudioBridge(params: {
   let realtimeReady = false;
   let lastInputAt: string | undefined;
   let lastOutputAt: string | undefined;
+  let lastClearAt: string | undefined;
   let lastInputBytes = 0;
   let lastOutputBytes = 0;
   let consecutiveInputErrors = 0;
   let lastInputError: string | undefined;
+  let clearCount = 0;
   const resolved = resolveGoogleMeetRealtimeProvider({
     config: params.config,
     fullConfig: params.fullConfig,
@@ -118,6 +121,26 @@ export async function startNodeRealtimeAudioBridge(params: {
             void stop();
           });
       },
+      clearAudio: () => {
+        lastClearAt = new Date().toISOString();
+        clearCount += 1;
+        void params.runtime.nodes
+          .invoke({
+            nodeId: params.nodeId,
+            command: "googlemeet.chrome",
+            params: {
+              action: "clearAudio",
+              bridgeId: params.bridgeId,
+            },
+            timeoutMs: 5_000,
+          })
+          .catch((error) => {
+            params.logger.warn(
+              `[google-meet] node audio clear failed: ${formatErrorMessage(error)}`,
+            );
+            void stop();
+          });
+      },
     },
     onTranscript: (role, text, isFinal) => {
       if (isFinal) {
@@ -135,6 +158,7 @@ export async function startNodeRealtimeAudioBridge(params: {
         });
         return;
       }
+      submitGoogleMeetConsultWorkingResponse(session, event.callId || event.itemId);
       void consultOpenClawAgentForGoogleMeet({
         config: params.config,
         fullConfig: params.fullConfig,
@@ -230,10 +254,12 @@ export async function startNodeRealtimeAudioBridge(params: {
       audioOutputActive: lastOutputBytes > 0,
       lastInputAt,
       lastOutputAt,
+      lastClearAt,
       lastInputBytes,
       lastOutputBytes,
       consecutiveInputErrors,
       lastInputError,
+      clearCount,
       bridgeClosed: stopped,
     }),
     stop,
