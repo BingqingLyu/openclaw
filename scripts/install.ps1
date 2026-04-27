@@ -388,6 +388,7 @@ function Add-ToPath {
 }
 
 $script:InstallExitCode = 0
+$script:ShouldExitOnFailure = $false
 
 function Fail-Install {
     param([int]$Code = 1)
@@ -403,11 +404,11 @@ function Complete-Install {
         return
     }
 
-    if ($PSCommandPath) {
+    if ($script:ShouldExitOnFailure -and $PSCommandPath) {
         exit $script:InstallExitCode
     }
 
-    throw "OpenClaw installation failed with exit code $($script:InstallExitCode)."
+    throw "OpenClaw installation failed with exit code $script:InstallExitCode."
 }
 
 # Main
@@ -485,5 +486,6 @@ function Main {
     return $true
 }
 
+$script:ShouldExitOnFailure = $MyInvocation.MyCommand.CommandType -eq "ExternalScript"
 $installSucceeded = Main
 Complete-Install -Succeeded:$installSucceeded
