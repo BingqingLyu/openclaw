@@ -33,6 +33,13 @@ export function createGoogleVertexProvider(): ProviderPlugin {
     id: "google-vertex",
     label: "Google Vertex AI",
     docsPath: "/providers/models",
+    envVars: [
+      "GOOGLE_CLOUD_API_KEY",
+      "GOOGLE_CLOUD_PROJECT",
+      "GCLOUD_PROJECT",
+      "GOOGLE_CLOUD_LOCATION",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+    ],
     auth: [],
   };
 }

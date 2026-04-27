@@ -1,5 +1,6 @@
 import { createSign } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { resolveGoogleVertexAdcCredentialsPath } from "./vertex-region.js";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -62,21 +63,28 @@ async function refreshAuthorizedUserToken(adc: AdcAuthorizedUser): Promise<{
   access_token: string;
   expires_in: number;
 }> {
-  const response = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: adc.client_id,
-      client_secret: adc.client_secret,
-      refresh_token: adc.refresh_token,
-      grant_type: "refresh_token",
-    }),
+  const { response, release } = await fetchWithSsrFGuard({
+    url: TOKEN_URL,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: adc.client_id,
+        client_secret: adc.client_secret,
+        refresh_token: adc.refresh_token,
+        grant_type: "refresh_token",
+      }),
+    },
   });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Google ADC token refresh failed (${response.status}): ${text}`);
+  try {
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Google ADC token refresh failed (${response.status}): ${text}`);
+    }
+    return (await response.json()) as { access_token: string; expires_in: number };
+  } finally {
+    await release();
   }
-  return (await response.json()) as { access_token: string; expires_in: number };
 }
 
 function base64UrlEncode(input: string | Buffer): string {
@@ -112,19 +120,26 @@ async function mintServiceAccountToken(adc: AdcServiceAccount): Promise<{
   expires_in: number;
 }> {
   const assertion = signServiceAccountAssertion(adc);
-  const response = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }),
+  const { response, release } = await fetchWithSsrFGuard({
+    url: TOKEN_URL,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion,
+      }),
+    },
   });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Google service-account token exchange failed (${response.status}): ${text}`);
+  try {
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Google service-account token exchange failed (${response.status}): ${text}`);
+    }
+    return (await response.json()) as { access_token: string; expires_in: number };
+  } finally {
+    await release();
   }
-  return (await response.json()) as { access_token: string; expires_in: number };
 }
 
 function resolveAdcProjectId(adc: AdcFile, env: NodeJS.ProcessEnv): string | undefined {

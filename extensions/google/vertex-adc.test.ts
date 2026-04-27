@@ -1,8 +1,9 @@
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { readFileSyncMock } = vi.hoisted(() => ({
+const { readFileSyncMock, fetchSpy } = vi.hoisted(() => ({
   readFileSyncMock: vi.fn(),
+  fetchSpy: vi.fn(),
 }));
 
 vi.mock("node:fs", async () => {
@@ -14,6 +15,13 @@ vi.mock("node:fs", async () => {
   };
 });
 
+vi.mock("openclaw/plugin-sdk/ssrf-runtime", () => ({
+  fetchWithSsrFGuard: async (params: { url: string; init?: RequestInit }) => {
+    const response = await fetchSpy(params.url, params.init);
+    return { response, finalUrl: params.url, release: async () => {} };
+  },
+}));
+
 import { clearGoogleVertexAdcTokenCache, resolveGoogleVertexAdcToken } from "./vertex-adc.js";
 
 const ADC_PATH = "/tmp/openclaw-vertex-adc.json";
@@ -22,13 +30,10 @@ const baseEnv = {
   GOOGLE_APPLICATION_CREDENTIALS: ADC_PATH,
 } as NodeJS.ProcessEnv;
 
-const fetchSpy = vi.fn();
-
 beforeEach(() => {
   clearGoogleVertexAdcTokenCache();
   readFileSyncMock.mockReset();
   fetchSpy.mockReset();
-  vi.stubGlobal("fetch", fetchSpy);
 });
 
 afterEach(() => {
