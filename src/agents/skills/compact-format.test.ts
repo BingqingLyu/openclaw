@@ -208,9 +208,7 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
     // Budget so small that even one compact skill can't fit
     const prompt = buildPrompt(skills, { maxChars: 10 });
     expect(prompt).not.toContain("only-one");
-    const match = prompt.match(/included (\d+) of (\d+)/);
-    expect(match).toBeTruthy();
-    expect(Number(match![1])).toBe(0);
+    expect(prompt).toBe("");
   });
 
   it("count truncation only: shows included X of Y without compact note", () => {
@@ -219,6 +217,27 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
     expect(prompt).toContain("included 5 of 20");
     expect(prompt).not.toContain("compact");
     expect(prompt).toContain("<description>");
+  });
+
+  it("reserves truncation-note budget before silently dropping omitted skills", () => {
+    const skills = Array.from({ length: 3 }, (_, i) => makeSkill(`skill-${i}`, "A".repeat(500)));
+    const singleFullLen = formatSkillsForPrompt(skills.slice(0, 1)).length;
+    const singleCompactLen = formatSkillsCompact(skills.slice(0, 1)).length;
+    const compactHeaderLen =
+      "⚠️ Skills truncated: included 1 of 3 (compact format, descriptions omitted). Run `openclaw skills check` to audit."
+        .length;
+    const budget = Math.max(singleCompactLen + compactHeaderLen + 1, singleFullLen + 5);
+
+    expect(singleFullLen).toBeLessThanOrEqual(budget);
+    expect(singleFullLen + compactHeaderLen + 1).toBeGreaterThan(budget);
+    expect(singleCompactLen + compactHeaderLen + 1).toBeLessThanOrEqual(budget);
+
+    const prompt = buildPrompt(skills, { maxChars: budget, maxCount: 1 });
+
+    expect(prompt).toContain("included 1 of 3");
+    expect(prompt).toContain("compact format, descriptions omitted");
+    expect(prompt).toContain("skill-0");
+    expect(prompt.length).toBeLessThanOrEqual(budget);
   });
 
   it("compact budget reserves space for the warning line", () => {
