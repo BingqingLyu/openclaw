@@ -233,6 +233,10 @@ export async function createFeishuWSClient(account: ResolvedFeishuAccount): Prom
     domain: resolveDomain(domain),
     loggerLevel: feishuClientSdk.LoggerLevel.info,
     ...(agent ? { agent } : {}),
+    wsConfig: {
+      PingInterval: 30,
+      PingTimeout: 5,
+    },
   });
 }
 
