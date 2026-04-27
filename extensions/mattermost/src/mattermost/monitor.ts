@@ -232,7 +232,7 @@ function channelChatType(kind: ChatType): "direct" | "group" | "channel" {
 
 export function resolveMattermostReplyRootId(params: {
   threadRootId?: string;
-  replyToId?: string;
+  replyToId?: string | null;
 }): string | undefined {
   const threadRootId = normalizeOptionalString(params.threadRootId);
   if (threadRootId) {
@@ -244,7 +244,7 @@ export function resolveMattermostReplyRootId(params: {
 export function canFinalizeMattermostPreviewInPlace(params: {
   previewRootId?: string;
   threadRootId?: string;
-  replyToId?: string;
+  replyToId?: string | null;
 }): boolean {
   return (
     resolveMattermostReplyRootId({
