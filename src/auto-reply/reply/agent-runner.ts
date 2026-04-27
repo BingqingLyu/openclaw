@@ -1367,6 +1367,7 @@ export async function runReplyAgent(params: {
         ? await hasSessionRelatedCronJobs({
             cronStorePath: cfg.cron?.store,
             sessionKey,
+            agentId: resolveAgentIdFromSessionKey(sessionKey),
           })
         : false;
     const guardedReplyPayloads =
