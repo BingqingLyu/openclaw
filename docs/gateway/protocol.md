@@ -84,6 +84,10 @@ Gateway → Client:
     "server": { "version": "…", "connId": "…" },
     "features": { "methods": ["…"], "events": ["…"] },
     "snapshot": { "…": "…" },
+    "auth": {
+      "role": "operator",
+      "scopes": ["operator.read", "operator.write"]
+    },
     "policy": {
       "maxPayload": 26214400,
       "maxBufferedBytes": 52428800,
@@ -94,12 +98,11 @@ Gateway → Client:
 ```
 
 `server`, `features`, `snapshot`, and `policy` are all required by the schema
-(`src/gateway/protocol/schema/frames.ts`). `canvasHostUrl` is optional. `auth`
-reports the negotiated role/scopes when available, and includes `deviceToken`
-when the gateway issues one.
+(`src/gateway/protocol/schema/frames.ts`). `auth` is also required and reports
+the negotiated role/scopes. `canvasHostUrl` is optional.
 
-When no device token is issued, `hello-ok.auth` can still report the negotiated
-permissions:
+When no device token is issued, `hello-ok.auth` reports the negotiated
+permissions without token fields:
 
 ```json
 {
@@ -330,6 +333,7 @@ enumeration of `src/gateway/server-methods/*.ts`.
     - `config.schema` returns the live config schema payload used by Control UI and CLI tooling: schema, `uiHints`, version, and generation metadata, including plugin + channel schema metadata when the runtime can load it. The schema includes field `title` / `description` metadata derived from the same labels and help text used by the UI, including nested object, wildcard, array-item, and `anyOf` / `oneOf` / `allOf` composition branches when matching field documentation exists.
     - `config.schema.lookup` returns a path-scoped lookup payload for one config path: normalized path, a shallow schema node, matched hint + `hintPath`, and immediate child summaries for UI/CLI drill-down. Lookup schema nodes keep the user-facing docs and common validation fields (`title`, `description`, `type`, `enum`, `const`, `format`, `pattern`, numeric/string/array/object bounds, and flags like `additionalProperties`, `deprecated`, `readOnly`, `writeOnly`). Child summaries expose `key`, normalized `path`, `type`, `required`, `hasChildren`, plus the matched `hint` / `hintPath`.
     - `update.run` runs the gateway update flow and schedules a restart only when the update itself succeeded.
+    - `update.status` returns the latest cached update restart sentinel, including the post-restart running version when available.
     - `wizard.start`, `wizard.next`, `wizard.status`, and `wizard.cancel` expose the onboarding wizard over WS RPC.
   </Accordion>
 

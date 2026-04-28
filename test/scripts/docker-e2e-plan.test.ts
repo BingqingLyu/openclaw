@@ -45,6 +45,9 @@ describe("scripts/lib/docker-e2e-plan", () => {
     expect(plan.lanes.map((lane) => lane.name)).toContain("mcp-channels");
     expect(plan.lanes.map((lane) => lane.name)).toContain("bundled-channel-feishu");
     expect(plan.lanes.map((lane) => lane.name)).toContain("bundled-channel-update-acpx");
+    expect(plan.lanes.map((lane) => lane.name)).toContain("bundled-plugin-install-uninstall-0");
+    expect(plan.lanes.map((lane) => lane.name)).toContain("bundled-plugin-install-uninstall-7");
+    expect(plan.lanes.map((lane) => lane.name)).not.toContain("bundled-plugin-install-uninstall");
     expect(plan.lanes.map((lane) => lane.name)).not.toContain("bundled-channel-deps");
     expect(plan.lanes.map((lane) => lane.name)).not.toContain("openwebui");
   });
@@ -109,6 +112,38 @@ describe("scripts/lib/docker-e2e-plan", () => {
         name: "bundled-channel-deps-compat",
       }),
     ]);
+  });
+
+  it("maps bundled plugin install/uninstall to package-backed shards", () => {
+    const selectedLaneNames = parseLaneSelection("bundled-plugin-install-uninstall");
+    const plan = planFor({ selectedLaneNames });
+
+    expect(selectedLaneNames).toEqual(
+      Array.from({ length: 8 }, (_, index) => `bundled-plugin-install-uninstall-${index}`),
+    );
+    expect(plan.lanes).toHaveLength(8);
+    expect(plan.lanes[0]).toEqual(
+      expect.objectContaining({
+        command: expect.stringContaining("OPENCLAW_BUNDLED_PLUGIN_SWEEP_INDEX=0"),
+        imageKind: "functional",
+        live: false,
+        name: "bundled-plugin-install-uninstall-0",
+        resources: expect.arrayContaining(["docker", "npm"]),
+      }),
+    );
+    expect(plan.lanes[7]).toEqual(
+      expect.objectContaining({
+        command: expect.stringContaining("OPENCLAW_BUNDLED_PLUGIN_SWEEP_INDEX=7"),
+        imageKind: "functional",
+        live: false,
+        name: "bundled-plugin-install-uninstall-7",
+        resources: expect.arrayContaining(["docker", "npm"]),
+      }),
+    );
+    expect(plan.needs).toMatchObject({
+      functionalImage: true,
+      package: true,
+    });
   });
 
   it("rejects unknown selected lanes with the available lane names", () => {

@@ -336,7 +336,7 @@ Common failure checks:
 The Chrome realtime default uses two external tools:
 
 - `sox`: command-line audio utility. The plugin uses its `rec` and `play`
-  commands for the default 8 kHz G.711 mu-law audio bridge.
+  commands for the default 24 kHz PCM16 audio bridge.
 - `blackhole-2ch`: macOS virtual audio driver. It creates the `BlackHole 2ch`
   audio device that Chrome/Meet can route through.
 
@@ -887,16 +887,21 @@ Defaults:
   opening duplicates
 - `chrome.waitForInCallMs: 20000`: wait for the Meet tab to report in-call
   before the realtime intro is triggered
-- `chrome.audioInputCommand`: SoX `rec` command writing 8 kHz G.711 mu-law
-  audio to stdout
-- `chrome.audioOutputCommand`: SoX `play` command reading 8 kHz G.711 mu-law
-  audio from stdin
+- `chrome.audioFormat: "pcm16-24khz"`: command-pair audio format. Use
+  `"g711-ulaw-8khz"` only for legacy/custom command pairs that still emit
+  telephony audio.
+- `chrome.audioInputCommand`: SoX `rec` command writing audio in
+  `chrome.audioFormat`
+- `chrome.audioOutputCommand`: SoX `play` command reading audio in
+  `chrome.audioFormat`
 - `realtime.provider: "openai"`
 - `realtime.toolPolicy: "safe-read-only"`
 - `realtime.instructions`: brief spoken replies, with
   `openclaw_agent_consult` for deeper answers
 - `realtime.introMessage`: short spoken readiness check when the realtime bridge
   connects; set it to `""` to join silently
+- `realtime.agentId`: optional OpenClaw agent id for
+  `openclaw_agent_consult`; defaults to `main`
 
 Optional overrides:
 
@@ -915,6 +920,7 @@ Optional overrides:
   },
   realtime: {
     provider: "google",
+    agentId: "jay",
     toolPolicy: "owner",
     introMessage: "Say exactly: I'm here.",
     providers: {
@@ -1000,6 +1006,10 @@ The consult tool runs the regular OpenClaw agent behind the scenes with recent
 meeting transcript context and returns a concise spoken answer to the realtime
 voice session. The voice model can then speak that answer back into the meeting.
 It uses the same shared realtime consult tool as Voice Call.
+
+By default, consults run against the `main` agent. Set `realtime.agentId` when a
+Meet lane should consult a dedicated OpenClaw agent workspace, model defaults,
+tool policy, memory, and session history.
 
 `realtime.toolPolicy` controls the consult run:
 
@@ -1306,8 +1316,9 @@ phone dial-in participation.
 Chrome realtime mode needs either:
 
 - `chrome.audioInputCommand` plus `chrome.audioOutputCommand`: OpenClaw owns the
-  realtime model bridge and pipes 8 kHz G.711 mu-law audio between those
-  commands and the selected realtime voice provider.
+  realtime model bridge and pipes audio in `chrome.audioFormat` between those
+  commands and the selected realtime voice provider. The default Chrome path is
+  24 kHz PCM16; 8 kHz G.711 mu-law remains available for legacy command pairs.
 - `chrome.audioBridgeCommand`: an external bridge command owns the whole local
   audio path and must exit after starting or validating its daemon.
 
