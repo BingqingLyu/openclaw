@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { PaginatedResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv-provider.js";
 import type {
   JsonSchemaType,
@@ -11,6 +11,7 @@ import type {
   jsonSchemaValidator,
 } from "@modelcontextprotocol/sdk/validation/types.js";
 import type { ErrorObject, ValidateFunction } from "ajv";
+import { z } from "zod";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { logWarn } from "../logger.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
@@ -37,10 +38,51 @@ type BundleMcpSession = {
 };
 
 type LoadedMcpConfig = ReturnType<typeof loadEmbeddedPiMcpConfig>;
-type ListedTool = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
 type CreateSessionMcpRuntime = (
   params: Parameters<typeof createSessionMcpRuntime>[0] & { configFingerprint?: string },
 ) => SessionMcpRuntime;
+
+/**
+ * Lenient tool schema that accepts inputSchema without requiring type: "object".
+ * The official MCP SDK's ToolSchema uses z.literal("object") for inputSchema.type,
+ * which causes servers that omit this field to fail validation (issue #63602).
+ * We normalize the inputSchema after listing instead.
+ */
+const LenientToolSchema = z
+  .object({
+    name: z.string(),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    inputSchema: z.record(z.string(), z.unknown()).default({}),
+  })
+  .catchall(z.unknown());
+
+type LenientListedTool = z.infer<typeof LenientToolSchema>;
+
+const LenientListToolsResultSchema = PaginatedResultSchema.extend({
+  tools: z.array(LenientToolSchema),
+});
+
+/**
+ * Normalize an MCP tool's inputSchema to always include type: "object",
+ * which is required by LLM providers. Some MCP servers omit this field.
+ */
+function normalizeInputSchema(raw: Record<string, unknown>): Record<string, unknown> {
+  if (raw.type !== undefined) {
+    return raw;
+  }
+  return { ...raw, type: "object" };
+}
+
+/**
+ * Per the MCP spec, a tool's root inputSchema must be an object schema.
+ * Schemas with an explicit non-object root type (e.g. "string", "array") are
+ * malformed and would be rejected by OpenAI-style function-call providers,
+ * failing the entire request rather than just the bad tool.
+ */
+function isValidRootInputSchema(schema: Record<string, unknown>): boolean {
+  return schema.type === "object";
+}
 
 const require = createRequire(import.meta.url);
 const SESSION_MCP_RUNTIME_MANAGER_KEY = Symbol.for("openclaw.sessionMcpRuntimeManager");
@@ -120,10 +162,17 @@ function redactErrorUrls(error: unknown): string {
 }
 
 async function listAllTools(client: Client) {
-  const tools: ListedTool[] = [];
+  const tools: LenientListedTool[] = [];
   let cursor: string | undefined;
   do {
-    const page = await client.listTools(cursor ? { cursor } : undefined);
+    // Use client.request() with a lenient schema instead of client.listTools()
+    // to avoid the SDK's strict inputSchema.type === "object" validation.
+    // Some MCP servers return tools without type: "object" in their inputSchema
+    // (issue #63602), which causes the default Zod validation to fail.
+    const page = await client.request(
+      { method: "tools/list", params: cursor ? { cursor } : undefined },
+      LenientListToolsResultSchema,
+    );
     tools.push(...page.tools);
     cursor = page.nextCursor;
   } while (cursor);
@@ -272,13 +321,21 @@ export function createSessionMcpRuntime(params: {
               if (!toolName) {
                 continue;
               }
+              const inputSchema = normalizeInputSchema(tool.inputSchema);
+              if (!isValidRootInputSchema(inputSchema)) {
+                logWarn(
+                  `bundle-mcp: skipping tool "${toolName}" from server "${serverName}": ` +
+                    `inputSchema.type is ${JSON.stringify(inputSchema.type)} (must be "object" per MCP spec).`,
+                );
+                continue;
+              }
               tools.push({
                 serverName,
                 safeServerName,
                 toolName,
                 title: tool.title,
                 description: normalizeOptionalString(tool.description),
-                inputSchema: tool.inputSchema,
+                inputSchema,
                 fallbackDescription: `Provided by bundle MCP server "${serverName}" (${resolved.description}).`,
               });
             }
@@ -642,4 +699,8 @@ export const __testing = {
     return getSessionMcpRuntimeManager().listSessionIds();
   },
   resolveSessionMcpRuntimeIdleTtlMs,
+  normalizeInputSchema,
+  isValidRootInputSchema,
+  LenientToolSchema,
+  LenientListToolsResultSchema,
 };
