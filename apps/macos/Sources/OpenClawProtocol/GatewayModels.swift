@@ -82,7 +82,7 @@ public struct HelloOk: Codable, Sendable {
     public let features: [String: AnyCodable]
     public let snapshot: Snapshot
     public let canvashosturl: String?
-    public let auth: [String: AnyCodable]?
+    public let auth: [String: AnyCodable]
     public let policy: [String: AnyCodable]
 
     public init(
@@ -92,7 +92,7 @@ public struct HelloOk: Codable, Sendable {
         features: [String: AnyCodable],
         snapshot: Snapshot,
         canvashosturl: String?,
-        auth: [String: AnyCodable]?,
+        auth: [String: AnyCodable],
         policy: [String: AnyCodable])
     {
         self.type = type
@@ -376,6 +376,7 @@ public struct AgentEvent: Codable, Sendable {
     public let seq: Int
     public let stream: String
     public let ts: Int
+    public let spawnedby: String?
     public let data: [String: AnyCodable]
 
     public init(
@@ -383,12 +384,14 @@ public struct AgentEvent: Codable, Sendable {
         seq: Int,
         stream: String,
         ts: Int,
+        spawnedby: String?,
         data: [String: AnyCodable])
     {
         self.runid = runid
         self.seq = seq
         self.stream = stream
         self.ts = ts
+        self.spawnedby = spawnedby
         self.data = data
     }
 
@@ -397,6 +400,7 @@ public struct AgentEvent: Codable, Sendable {
         case seq
         case stream
         case ts
+        case spawnedby = "spawnedBy"
         case data
     }
 }
@@ -600,6 +604,7 @@ public struct AgentParams: Codable, Sendable {
     public let extrasystemprompt: String?
     public let bootstrapcontextmode: AnyCodable?
     public let bootstrapcontextrunkind: AnyCodable?
+    public let acpturnsource: String?
     public let internalevents: [[String: AnyCodable]]?
     public let inputprovenance: [String: AnyCodable]?
     public let voicewaketrigger: String?
@@ -635,6 +640,7 @@ public struct AgentParams: Codable, Sendable {
         extrasystemprompt: String?,
         bootstrapcontextmode: AnyCodable?,
         bootstrapcontextrunkind: AnyCodable?,
+        acpturnsource: String?,
         internalevents: [[String: AnyCodable]]?,
         inputprovenance: [String: AnyCodable]?,
         voicewaketrigger: String?,
@@ -669,6 +675,7 @@ public struct AgentParams: Codable, Sendable {
         self.extrasystemprompt = extrasystemprompt
         self.bootstrapcontextmode = bootstrapcontextmode
         self.bootstrapcontextrunkind = bootstrapcontextrunkind
+        self.acpturnsource = acpturnsource
         self.internalevents = internalevents
         self.inputprovenance = inputprovenance
         self.voicewaketrigger = voicewaketrigger
@@ -705,6 +712,7 @@ public struct AgentParams: Codable, Sendable {
         case extrasystemprompt = "extraSystemPrompt"
         case bootstrapcontextmode = "bootstrapContextMode"
         case bootstrapcontextrunkind = "bootstrapContextRunKind"
+        case acpturnsource = "acpTurnSource"
         case internalevents = "internalEvents"
         case inputprovenance = "inputProvenance"
         case voicewaketrigger = "voiceWakeTrigger"
@@ -890,6 +898,20 @@ public struct NodePairRejectParams: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case requestid = "requestId"
+    }
+}
+
+public struct NodePairRemoveParams: Codable, Sendable {
+    public let nodeid: String
+
+    public init(
+        nodeid: String)
+    {
+        self.nodeid = nodeid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case nodeid = "nodeId"
     }
 }
 
@@ -2375,33 +2397,93 @@ public struct TalkRealtimeSessionParams: Codable, Sendable {
     }
 }
 
-public struct TalkRealtimeSessionResult: Codable, Sendable {
-    public let provider: String
-    public let clientsecret: String
-    public let model: String?
-    public let voice: String?
-    public let expiresat: Double?
+public struct TalkRealtimeRelayAudioParams: Codable, Sendable {
+    public let relaysessionid: String
+    public let audiobase64: String
+    public let timestamp: Double?
 
     public init(
-        provider: String,
-        clientsecret: String,
-        model: String?,
-        voice: String?,
-        expiresat: Double?)
+        relaysessionid: String,
+        audiobase64: String,
+        timestamp: Double?)
     {
-        self.provider = provider
-        self.clientsecret = clientsecret
-        self.model = model
-        self.voice = voice
-        self.expiresat = expiresat
+        self.relaysessionid = relaysessionid
+        self.audiobase64 = audiobase64
+        self.timestamp = timestamp
     }
 
     private enum CodingKeys: String, CodingKey {
-        case provider
-        case clientsecret = "clientSecret"
-        case model
-        case voice
-        case expiresat = "expiresAt"
+        case relaysessionid = "relaySessionId"
+        case audiobase64 = "audioBase64"
+        case timestamp
+    }
+}
+
+public struct TalkRealtimeRelayMarkParams: Codable, Sendable {
+    public let relaysessionid: String
+    public let markname: String?
+
+    public init(
+        relaysessionid: String,
+        markname: String?)
+    {
+        self.relaysessionid = relaysessionid
+        self.markname = markname
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case relaysessionid = "relaySessionId"
+        case markname = "markName"
+    }
+}
+
+public struct TalkRealtimeRelayStopParams: Codable, Sendable {
+    public let relaysessionid: String
+
+    public init(
+        relaysessionid: String)
+    {
+        self.relaysessionid = relaysessionid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case relaysessionid = "relaySessionId"
+    }
+}
+
+public struct TalkRealtimeRelayToolResultParams: Codable, Sendable {
+    public let relaysessionid: String
+    public let callid: String
+    public let result: AnyCodable
+
+    public init(
+        relaysessionid: String,
+        callid: String,
+        result: AnyCodable)
+    {
+        self.relaysessionid = relaysessionid
+        self.callid = callid
+        self.result = result
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case relaysessionid = "relaySessionId"
+        case callid = "callId"
+        case result
+    }
+}
+
+public struct TalkRealtimeRelayOkResult: Codable, Sendable {
+    public let ok: Bool
+
+    public init(
+        ok: Bool)
+    {
+        self.ok = ok
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
     }
 }
 
@@ -4444,6 +4526,7 @@ public struct ChatInjectParams: Codable, Sendable {
 public struct ChatEvent: Codable, Sendable {
     public let runid: String
     public let sessionkey: String
+    public let spawnedby: String?
     public let seq: Int
     public let state: AnyCodable
     public let message: AnyCodable?
@@ -4455,6 +4538,7 @@ public struct ChatEvent: Codable, Sendable {
     public init(
         runid: String,
         sessionkey: String,
+        spawnedby: String?,
         seq: Int,
         state: AnyCodable,
         message: AnyCodable?,
@@ -4465,6 +4549,7 @@ public struct ChatEvent: Codable, Sendable {
     {
         self.runid = runid
         self.sessionkey = sessionkey
+        self.spawnedby = spawnedby
         self.seq = seq
         self.state = state
         self.message = message
@@ -4477,6 +4562,7 @@ public struct ChatEvent: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case runid = "runId"
         case sessionkey = "sessionKey"
+        case spawnedby = "spawnedBy"
         case seq
         case state
         case message
@@ -4486,6 +4572,8 @@ public struct ChatEvent: Codable, Sendable {
         case stopreason = "stopReason"
     }
 }
+
+public struct UpdateStatusParams: Codable, Sendable {}
 
 public struct UpdateRunParams: Codable, Sendable {
     public let sessionkey: String?
