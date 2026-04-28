@@ -32,6 +32,7 @@ import {
   addSession,
   appendOutput,
   createSessionSlug,
+  hasSession,
   markExited,
   tail,
 } from "./bash-process-registry.js";
@@ -596,6 +597,9 @@ export async function runExecProcess(opts: {
     cursorKeyMode: opts.usePty ? "unknown" : "normal",
   };
   addSession(session);
+  await supervisor.reconcileOrphans({
+    isSessionTracked: hasSession,
+  });
 
   // Tracks whether the exec run's promise has settled (process exited or
   // spawn failed).  Once settled the agent-loop no longer expects
