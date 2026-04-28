@@ -151,3 +151,64 @@ export const FeishuEmoji = {
 } as const;
 
 export type FeishuEmojiType = (typeof FeishuEmoji)[keyof typeof FeishuEmoji];
+
+// Map common unicode emojis to Feishu emoji type strings.
+// The Feishu reactions API requires emoji_type values like "THUMBSUP", not
+// unicode characters like "👍". When the agent sends a raw unicode emoji we
+// convert it here so the API call succeeds.
+const unicodeToFeishuEmoji: Record<string, string> = {
+  "👍": "THUMBSUP",
+  "👎": "THUMBSDOWN",
+  "❤️": "HEART",
+  "❤": "HEART",
+  "😊": "SMILE",
+  "😀": "GRINNING",
+  "😄": "LAUGHING",
+  "😂": "LAUGHING",
+  "😢": "CRY",
+  "😭": "CRY",
+  "😠": "ANGRY",
+  "😡": "ANGRY",
+  "😮": "SURPRISED",
+  "😲": "SURPRISED",
+  "🤔": "THINKING",
+  "👏": "CLAP",
+  "👌": "OK",
+  "✊": "FIST",
+  "👊": "FIST",
+  "🙏": "PRAY",
+  "🔥": "FIRE",
+  "🎉": "PARTY",
+  "🥳": "PARTY",
+  "✅": "CHECK",
+  "✔️": "CHECK",
+  "✔": "CHECK",
+  "❌": "CROSS",
+  "❓": "QUESTION",
+  "❗": "EXCLAMATION",
+  "❕": "EXCLAMATION",
+};
+
+/**
+ * Normalize an emoji value to a Feishu emoji type string.
+ *
+ * Accepts either a Feishu emoji type (e.g. "THUMBSUP") or a unicode emoji
+ * (e.g. "👍") and returns the corresponding Feishu API emoji_type value.
+ * If the input is already a known Feishu type it passes through unchanged.
+ * Unknown values are returned as-is so the API can surface a clear error.
+ */
+export function normalizeFeishuEmoji(emoji: string): string {
+  const trimmed = emoji.trim();
+  // Already a known Feishu emoji type (uppercase ASCII string)?
+  const knownTypes = new Set(Object.values(FeishuEmoji));
+  if (knownTypes.has(trimmed as FeishuEmojiType)) {
+    return trimmed;
+  }
+  // Case-insensitive match (e.g. "thumbsup" → "THUMBSUP").
+  const upper = trimmed.toUpperCase();
+  if (knownTypes.has(upper as FeishuEmojiType)) {
+    return upper;
+  }
+  // Unicode emoji lookup.
+  return unicodeToFeishuEmoji[trimmed] ?? trimmed;
+}

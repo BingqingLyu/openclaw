@@ -63,6 +63,7 @@ import {
 } from "./conversation-id.js";
 import { listFeishuDirectoryGroups, listFeishuDirectoryPeers } from "./directory.static.js";
 import { messageActionTargetAliases } from "./message-action-contract.js";
+import { normalizeFeishuEmoji } from "./reactions.js";
 import { resolveFeishuGroupToolPolicy } from "./policy.js";
 import { collectRuntimeConfigAssignments, secretTargetRegistryEntries } from "./secret-contract.js";
 import { collectFeishuSecurityAuditFindings } from "./security-audit.js";
@@ -1028,7 +1029,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount, FeishuProbeResul
             if (!messageId) {
               throw new Error("Feishu reaction requires messageId.");
             }
-            const emoji = typeof ctx.params.emoji === "string" ? ctx.params.emoji.trim() : "";
+            const rawEmoji = typeof ctx.params.emoji === "string" ? ctx.params.emoji.trim() : "";
+            const emoji = rawEmoji ? normalizeFeishuEmoji(rawEmoji) : "";
             const remove = ctx.params.remove === true;
             const clearAll = ctx.params.clearAll === true;
             if (remove) {
