@@ -47,10 +47,23 @@ const { ProxyAgent, EnvHttpProxyAgent, undiciFetch, proxyAgentSpy, envAgentSpy, 
 
 const mockedModuleIds = ["undici"] as const;
 
+class UndiciFormData {
+  readonly entries_: [string, string | Blob, string?][] = [];
+  append(key: string, value: string | Blob, filename?: string) {
+    this.entries_.push([key, value, filename]);
+  }
+  *entries(): IterableIterator<[string, string | Blob]> {
+    for (const [k, v] of this.entries_) {
+      yield [k, v];
+    }
+  }
+}
+
 vi.mock("undici", () => ({
   ProxyAgent,
   EnvHttpProxyAgent,
   fetch: undiciFetch,
+  FormData: UndiciFormData,
 }));
 
 let getProxyUrlFromFetch: typeof import("./proxy-fetch.js").getProxyUrlFromFetch;
@@ -211,6 +224,144 @@ describe("resolveProxyFetchFromEnv", () => {
       HTTPS_PROXY: "not-a-valid-url",
     });
     expect(fetchFn).toBeUndefined();
+  });
+});
+
+describe("makeProxyFetch — FormData conversion", () => {
+  beforeAll(async () => {
+    ({ makeProxyFetch } = await import("./proxy-fetch.js"));
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("converts global FormData body to undici FormData", async () => {
+    undiciFetch.mockResolvedValue({ ok: true });
+    const proxyFetch = makeProxyFetch("http://proxy.test:8080");
+
+    const gfd = new FormData();
+    gfd.append("field", "value");
+    await proxyFetch("https://api.example.com/upload", {
+      method: "POST",
+      body: gfd as unknown as BodyInit,
+    });
+
+    const [, init] = undiciFetch.mock.calls[0] as [string, { body: unknown }];
+    expect(init.body).toBeInstanceOf(UndiciFormData);
+  });
+
+  it("passes through undici FormData body unchanged", async () => {
+    undiciFetch.mockResolvedValue({ ok: true });
+    const proxyFetch = makeProxyFetch("http://proxy.test:8080");
+
+    const ufd = new UndiciFormData();
+    ufd.append("key", "val");
+    await proxyFetch("https://api.example.com/upload", {
+      method: "POST",
+      body: ufd as unknown as BodyInit,
+    });
+
+    const [, init] = undiciFetch.mock.calls[0] as [string, { body: unknown }];
+    expect(init.body).toBe(ufd);
+  });
+});
+
+describe("makeProxyFetch — Request object normalization", () => {
+  beforeAll(async () => {
+    ({ makeProxyFetch } = await import("./proxy-fetch.js"));
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("flattens a Request object into (url, init)", async () => {
+    undiciFetch.mockResolvedValue({ ok: true });
+    const proxyFetch = makeProxyFetch("http://proxy.test:8080");
+
+    const req = new Request("https://api.example.com/data", {
+      method: "POST",
+      headers: { "x-custom": "header" },
+      body: "payload",
+      // duplex is not part of RequestInit type but needed for streaming
+    } as RequestInit);
+    await proxyFetch(req);
+
+    const [url, init] = undiciFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.example.com/data");
+    expect((init.headers as Headers).get("x-custom")).toBe("header");
+    expect(init.method).toBe("POST");
+  });
+
+  it("replaces inherited Request headers when init.headers is provided", async () => {
+    undiciFetch.mockResolvedValue({ ok: true });
+    const proxyFetch = makeProxyFetch("http://proxy.test:8080");
+    const req = new Request("https://api.example.com/data", {
+      headers: {
+        authorization: "Bearer inherited",
+        "x-inherited": "keep",
+      },
+    });
+
+    await proxyFetch(req, {
+      headers: {
+        "x-replaced": "1",
+      },
+    });
+
+    const [, init] = undiciFetch.mock.calls[0] as [string, { headers: Headers }];
+    expect(init.headers.get("authorization")).toBeNull();
+    expect(init.headers.get("x-inherited")).toBeNull();
+    expect(init.headers.get("x-replaced")).toBe("1");
+  });
+
+  it("detaches inherited Request signals when init.signal is null", async () => {
+    undiciFetch.mockResolvedValue({ ok: true });
+    const proxyFetch = makeProxyFetch("http://proxy.test:8080");
+    const controller = new AbortController();
+    controller.abort();
+    const req = new Request("https://api.example.com/data", {
+      signal: controller.signal,
+    });
+
+    await proxyFetch(req, { signal: null });
+
+    const [, init] = undiciFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeUndefined();
+  });
+
+  it("preserves inherited Request signals when init.signal is undefined", async () => {
+    undiciFetch.mockResolvedValue({ ok: true });
+    const proxyFetch = makeProxyFetch("http://proxy.test:8080");
+    const controller = new AbortController();
+    const req = new Request("https://api.example.com/data", {
+      signal: controller.signal,
+    });
+
+    await proxyFetch(req, { signal: undefined });
+
+    const [, init] = undiciFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBe(controller.signal);
+  });
+
+  it("strips hop-by-hop headers when merging Request headers", async () => {
+    undiciFetch.mockResolvedValue({ ok: true });
+    const proxyFetch = makeProxyFetch("http://proxy.test:8080");
+
+    await proxyFetch("https://api.example.com/data", {
+      method: "GET",
+      headers: {
+        "transfer-encoding": "chunked",
+        connection: "keep-alive",
+        "x-safe": "keep-me",
+      },
+    });
+
+    const [, init] = undiciFetch.mock.calls[0] as [string, { headers: Headers }];
+    expect(init.headers.get("transfer-encoding")).toBeNull();
+    expect(init.headers.get("connection")).toBeNull();
+    expect(init.headers.get("x-safe")).toBe("keep-me");
   });
 });
 
