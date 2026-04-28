@@ -438,6 +438,15 @@ describe("chat loading skeleton", () => {
   });
 });
 
+describe("chat voice controls", () => {
+  it("keeps Talk visible without the stale browser dictation button", () => {
+    const container = renderChatView();
+
+    expect(container.querySelector('[aria-label="Start Talk"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Voice input"]')).toBeNull();
+  });
+});
+
 describe("chat attachment picker", () => {
   it("accepts and previews non-video file attachments", async () => {
     const onAttachmentsChange = vi.fn();
@@ -466,6 +475,29 @@ describe("chat attachment picker", () => {
     const preview = renderChatView({ attachments: nextAttachments });
     expect(preview.querySelector(".chat-attachment-thumb--file")).not.toBeNull();
     expect(preview.textContent).toContain("brief.pdf");
+  });
+
+  it("uses image extension fallback for file attachments with missing mime types", async () => {
+    const onAttachmentsChange = vi.fn();
+    const container = renderChatView({ onAttachmentsChange });
+    const input = container.querySelector<HTMLInputElement>(".agent-chat__file-input");
+    const file = new File(["png"], "photo.png");
+
+    expect(input).not.toBeNull();
+    Object.defineProperty(input!, "files", {
+      configurable: true,
+      value: [file],
+    });
+    input?.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect(onAttachmentsChange).toHaveBeenCalledWith([
+        expect.objectContaining({
+          fileName: "photo.png",
+          mimeType: "image/png",
+        }),
+      ]);
+    });
   });
 
   it("filters video file attachments", () => {
