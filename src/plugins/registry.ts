@@ -113,6 +113,7 @@ import type {
   OpenClawPluginReloadRegistration,
   OpenClawPluginSecurityAuditCollector,
   MediaUnderstandingProviderPlugin,
+  MigrationProviderPlugin,
   OpenClawPluginService,
   OpenClawPluginToolContext,
   OpenClawPluginToolFactory,
@@ -421,6 +422,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     handler: Parameters<typeof registerInternalHook>[1],
     opts: OpenClawPluginHookOptions | undefined,
     config: OpenClawPluginApi["config"],
+    pluginConfig: unknown,
   ) => {
     const eventList = Array.isArray(events) ? events : [events];
     const normalizedEvents = eventList.map((event) => event.trim()).filter(Boolean);
@@ -498,8 +500,13 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
       handler: Parameters<typeof registerInternalHook>[1];
     }> = [];
     for (const event of normalizedEvents) {
-      registerInternalHook(event, handler);
-      nextRegistrations.push({ event, handler });
+      const wrappedHandler: typeof handler = async (evt) => {
+        // Shallow-copy to avoid mutating the shared event object
+        // passed to all handlers sequentially by triggerInternalHook
+        return handler({ ...evt, context: { ...evt.context, pluginConfig } });
+      };
+      registerInternalHook(event, wrappedHandler);
+      nextRegistrations.push({ event, handler: wrappedHandler });
     }
     activePluginHookRegistrations.set(hookName, nextRegistrations);
     const rollbackEntries = pluginHookRollback.get(record.id) ?? [];
@@ -1016,6 +1023,16 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     });
   };
 
+  const registerMigrationProvider = (record: PluginRecord, provider: MigrationProviderPlugin) => {
+    registerUniqueProviderLike({
+      record,
+      provider,
+      kindLabel: "migration provider",
+      registrations: registry.migrationProviders,
+      ownedIds: record.migrationProviderIds,
+    });
+  };
+
   const registerCli = (
     record: PluginRecord,
     registrar: OpenClawPluginCliRegistrar,
@@ -1455,7 +1472,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
           ? {
               registerTool: (tool, opts) => registerTool(record, tool, opts),
               registerHook: (events, handler, opts) =>
-                registerHook(record, events, handler, opts, params.config),
+                registerHook(record, events, handler, opts, params.config, params.pluginConfig),
               registerHttpRoute: (routeParams) => registerHttpRoute(record, routeParams),
               registerProvider: (provider) => registerProvider(record, provider),
               registerAgentHarness: (harness) => registerAgentHarness(record, harness),
@@ -1487,6 +1504,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                 registerMusicGenerationProvider(record, provider),
               registerWebFetchProvider: (provider) => registerWebFetchProvider(record, provider),
               registerWebSearchProvider: (provider) => registerWebSearchProvider(record, provider),
+              registerMigrationProvider: (provider) => registerMigrationProvider(record, provider),
               registerGatewayMethod: (method, handler, opts) =>
                 registerGatewayMethod(record, method, handler, opts),
               registerService: (service) => registerService(record, service),
@@ -1764,6 +1782,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     registerVideoGenerationProvider,
     registerMusicGenerationProvider,
     registerWebSearchProvider,
+    registerMigrationProvider,
     registerGatewayMethod,
     registerCli,
     registerReload,
