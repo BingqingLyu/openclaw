@@ -4,6 +4,7 @@ import {
   waitForActiveEmbeddedRuns,
 } from "../../agents/pi-embedded-runner/runs.js";
 import { loadConfig } from "../../config/config.js";
+import { consumeSystemdRestartExpectationMarker } from "../../daemon/systemd.js";
 import type { startGatewayServer } from "../../gateway/server.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { acquireGatewayLock } from "../../infra/gateway-lock.js";
@@ -36,7 +37,7 @@ const LAUNCHD_SUPERVISED_RESTART_EXIT_DELAY_MS = 1500;
 const DEFAULT_RESTART_DRAIN_TIMEOUT_MS = 300_000;
 const RESTART_DRAIN_STILL_PENDING_WARN_MS = 30_000;
 
-type GatewayRunSignalAction = "stop" | "restart";
+type GatewayRunSignalAction = "stop" | "restart" | "supervised-restart";
 type RestartDrainTimeoutMs = number | undefined;
 
 export async function runGatewayLoop(params: {
@@ -132,6 +133,7 @@ export async function runGatewayLoop(params: {
 
   const SUPERVISOR_STOP_TIMEOUT_MS = 30_000;
   const SHUTDOWN_TIMEOUT_MS = SUPERVISOR_STOP_TIMEOUT_MS - 5_000;
+  const SUPERVISED_RESTART_DRAIN_TIMEOUT_MS = SHUTDOWN_TIMEOUT_MS - 5_000;
   const resolveRestartDrainTimeoutMs = (): RestartDrainTimeoutMs => {
     try {
       const timeoutMs = loadConfig().gateway?.reload?.deferralTimeoutMs;
@@ -149,8 +151,14 @@ export async function runGatewayLoop(params: {
       return;
     }
     shuttingDown = true;
-    const isRestart = action === "restart";
-    const restartDrainTimeoutMs = isRestart ? resolveRestartDrainTimeoutMs() : 0;
+    const isRestart = action !== "stop";
+    const usesExtendedRestartDrain = action === "restart";
+    const restartDrainTimeoutMs =
+      action === "restart"
+        ? resolveRestartDrainTimeoutMs()
+        : action === "supervised-restart"
+          ? SUPERVISED_RESTART_DRAIN_TIMEOUT_MS
+          : 0;
     gatewayLog.info(`received ${signal}; ${isRestart ? "restarting" : "shutting down"}`);
 
     let forceExitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -179,9 +187,12 @@ export async function runGatewayLoop(params: {
 
     if (!isRestart) {
       armForceExitTimer(SHUTDOWN_TIMEOUT_MS);
-    } else if (restartDrainTimeoutMs !== undefined) {
+    } else if (usesExtendedRestartDrain && restartDrainTimeoutMs !== undefined) {
       // Allow extra time for draining active turns on explicitly capped restarts.
       armForceExitTimer(restartDrainTimeoutMs + SHUTDOWN_TIMEOUT_MS);
+    } else if (action === "supervised-restart") {
+      // Marker-triggered systemd restarts are already inside systemd's stop window.
+      armForceExitTimer(SHUTDOWN_TIMEOUT_MS);
     }
 
     const formatRestartDrainBudget = () =>
@@ -267,6 +278,11 @@ export async function runGatewayLoop(params: {
 
   const onSigterm = () => {
     gatewayLog.info("signal SIGTERM received");
+    if (consumeSystemdRestartExpectationMarker(process.env)) {
+      gatewayLog.info("SIGTERM matched pending systemd restart expectation");
+      request("supervised-restart", "SIGTERM");
+      return;
+    }
     request(consumeGatewayRestartIntentSync() ? "restart" : "stop", "SIGTERM");
   };
   const onSigint = () => {
