@@ -855,6 +855,7 @@ export async function compactEmbeddedPiSessionDirect(
         provider,
         modelId,
         model,
+        promptMode,
       });
       const resourceLoader = new DefaultResourceLoader({
         cwd: resolvedWorkspace,

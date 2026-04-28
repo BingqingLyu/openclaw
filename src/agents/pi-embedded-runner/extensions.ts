@@ -95,6 +95,7 @@ function buildContextPruningFactory(params: {
   provider: string;
   modelId: string;
   model: ProviderRuntimeModel | undefined;
+  promptMode?: "full" | "minimal";
 }): ExtensionFactory | undefined {
   const raw = params.cfg?.agents?.defaults?.contextPruning;
   if (raw?.mode !== "cache-ttl") {
@@ -107,6 +108,13 @@ function buildContextPruningFactory(params: {
   const settings = computeEffectiveSettings(raw);
   if (!settings) {
     return undefined;
+  }
+  // In autonomous execution modes (subagents, cron jobs) the agent drives all
+  // tool calls and consumes results in the same turn, so retaining 3 turns of
+  // full tool results is wasteful. Reduce to 1 while still respecting an
+  // explicit user override of 0.
+  if (params.promptMode === "minimal") {
+    settings.keepLastAssistants = Math.min(settings.keepLastAssistants, 1);
   }
   const transcriptPolicy = resolveTranscriptPolicy({
     modelApi: params.model?.api,
@@ -143,6 +151,7 @@ export function buildEmbeddedExtensionFactories(params: {
   provider: string;
   modelId: string;
   model: ProviderRuntimeModel | undefined;
+  promptMode?: "full" | "minimal";
 }): ExtensionFactory[] {
   const factories: ExtensionFactory[] = [];
   if (resolveCompactionMode(params.cfg) === "safeguard") {
@@ -170,7 +179,14 @@ export function buildEmbeddedExtensionFactories(params: {
     });
     factories.push(compactionSafeguardExtension);
   }
-  const pruningFactory = buildContextPruningFactory(params);
+  const pruningFactory = buildContextPruningFactory({
+    cfg: params.cfg,
+    sessionManager: params.sessionManager,
+    provider: params.provider,
+    modelId: params.modelId,
+    model: params.model,
+    promptMode: params.promptMode,
+  });
   if (pruningFactory) {
     factories.push(pruningFactory);
   }
