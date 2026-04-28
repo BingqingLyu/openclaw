@@ -49,6 +49,8 @@ vi.mock("./dotenv.js", () => ({
 }));
 
 vi.mock("../infra/env.js", () => ({
+  isTruthyEnvValue: (value?: string) =>
+    typeof value === "string" && ["1", "on", "true", "yes"].includes(value.trim().toLowerCase()),
   normalizeEnv: normalizeEnvMock,
 }));
 
@@ -295,7 +297,11 @@ describe("runCli exit behavior", () => {
 
     await expect(runCli(["node", "openclaw", "status"])).resolves.toBeUndefined();
 
-    expect(registerSubCliByNameMock).toHaveBeenCalledWith(expect.anything(), "status");
+    expect(registerSubCliByNameMock).toHaveBeenCalledWith(expect.anything(), "status", [
+      "node",
+      "openclaw",
+      "status",
+    ]);
     expect(process.exitCode).toBe(1);
     process.exitCode = exitCode;
   });
@@ -316,7 +322,12 @@ describe("runCli exit behavior", () => {
       "doctor",
       "--help",
     ]);
-    expect(registerSubCliByNameMock).toHaveBeenCalledWith(expect.anything(), "doctor");
+    expect(registerSubCliByNameMock).toHaveBeenCalledWith(expect.anything(), "doctor", [
+      "node",
+      "openclaw",
+      "doctor",
+      "--help",
+    ]);
   });
 
   it("restores terminal state before uncaught CLI exits", async () => {
@@ -352,6 +363,42 @@ describe("runCli exit behavior", () => {
         process.off("uncaughtException", handler);
       }
       consoleErrorSpy.mockRestore();
+      exitSpy.mockRestore();
+      processOnSpy.mockRestore();
+    }
+  });
+
+  it("does not exit for transient uncaught CLI exceptions", async () => {
+    buildProgramMock.mockReturnValueOnce({
+      commands: [{ name: () => "status" }],
+      parseAsync: vi.fn().mockResolvedValueOnce(undefined),
+    });
+
+    const processOnSpy = vi.spyOn(process, "on");
+    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${String(code)})`);
+    }) as typeof process.exit);
+
+    await runCli(["node", "openclaw", "status"]);
+
+    const handler = processOnSpy.mock.calls.find(([event]) => event === "uncaughtException")?.[1];
+    expect(typeof handler).toBe("function");
+
+    try {
+      const epipe = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+      expect(() => (handler as (error: unknown) => void)(epipe)).not.toThrow();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[openclaw] Non-fatal uncaught exception (continuing):",
+        expect.stringContaining("write EPIPE"),
+      );
+      expect(restoreTerminalStateMock).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+    } finally {
+      if (typeof handler === "function") {
+        process.off("uncaughtException", handler);
+      }
+      consoleWarnSpy.mockRestore();
       exitSpy.mockRestore();
       processOnSpy.mockRestore();
     }

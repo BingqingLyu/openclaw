@@ -730,6 +730,16 @@ Top-level fields:
 | `suppressions` | `object[]`                                               | Model rows from another source that this plugin suppresses for a provider-specific reason.                  |
 | `discovery`    | `Record<string, "static" \| "refreshable" \| "runtime">` | Whether the provider catalog can be read from manifest metadata, refreshed into cache, or requires runtime. |
 
+`aliases` participates in provider ownership lookup for model-catalog planning.
+Alias targets must be top-level providers owned by the same plugin. When a
+provider-filtered list uses an alias, OpenClaw can read the owning manifest and
+apply alias API/base URL overrides without loading provider runtime.
+
+`suppressions` replaces the old provider runtime `suppressBuiltInModel` hook.
+Suppression entries are honored only when the provider is owned by the plugin or
+declared as a `modelCatalog.aliases` key that targets an owned provider. Runtime
+suppression hooks are no longer called during model resolution.
+
 Provider fields:
 
 | Field     | Type                     | What it means                                                     |
@@ -761,9 +771,22 @@ Model fields:
 | `replacedBy`    | `string`                                                       | Replacement provider-local model id for deprecated rows.                    |
 | `tags`          | `string[]`                                                     | Stable tags used by pickers and filters.                                    |
 
-Do not put runtime-only data in `modelCatalog`. If a provider needs account
-state, an API request, or local process discovery to know the complete model
-set, declare that provider as `refreshable` or `runtime` in `discovery`.
+Suppression fields:
+
+| Field                      | Type       | What it means                                                                                             |
+| -------------------------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `provider`                 | `string`   | Provider id for the upstream row to suppress. Must be owned by this plugin or declared as an owned alias. |
+| `model`                    | `string`   | Provider-local model id to suppress.                                                                      |
+| `reason`                   | `string`   | Optional message shown when the suppressed row is requested directly.                                     |
+| `when.baseUrlHosts`        | `string[]` | Optional list of effective provider base URL hosts required before the suppression applies.               |
+| `when.providerConfigApiIn` | `string[]` | Optional list of exact provider-config `api` values required before the suppression applies.              |
+
+Do not put runtime-only data in `modelCatalog`. Use `static` only when manifest
+rows are complete enough for provider-filtered list and picker surfaces to skip
+registry/runtime discovery. Use `refreshable` when manifest rows are useful
+listable seeds or supplements but a refresh/cache can add more rows later;
+refreshable rows are not authoritative by themselves. Use `runtime` when OpenClaw
+must load provider runtime to know the list.
 
 ## modelIdNormalization reference
 
@@ -1020,10 +1043,12 @@ module:
 }
 ```
 
-Use it when setup, doctor, or configured-state flows need a cheap yes/no auth
-probe before the full channel plugin loads. The target export should be a small
-function that reads persisted state only; do not route it through the full
-channel runtime barrel.
+Use it when setup, doctor, status, or read-only presence flows need a cheap
+yes/no auth probe before the full channel plugin loads. Persisted auth state is
+not configured channel state: do not use this metadata to auto-enable plugins,
+repair runtime dependencies, or decide whether a channel runtime should load.
+The target export should be a small function that reads persisted state only; do
+not route it through the full channel runtime barrel.
 
 `openclaw.channel.configuredState` follows the same shape for cheap env-only
 configured checks:
