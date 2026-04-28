@@ -520,6 +520,16 @@ export async function handleAcpSpawnAction(
   let initializedBackend = "";
   let initializedMeta: SessionAcpMeta | undefined;
   let initializedRuntime: AcpSpawnRuntimeCloseHandle | undefined;
+  let initializedStatusProbe:
+    | {
+        runtime: {
+          getStatus?: (params: {
+            handle: { sessionKey: string; backend: string; runtimeSessionName: string };
+          }) => Promise<unknown>;
+        };
+        handle: { sessionKey: string; backend: string; runtimeSessionName: string };
+      }
+    | undefined;
   try {
     const initialized = await acpManager.initializeSession({
       cfg: params.cfg,
@@ -532,6 +542,10 @@ export async function handleAcpSpawnAction(
       runtime: initialized.runtime,
       handle: initialized.handle,
     };
+    initializedStatusProbe = {
+      runtime: initialized.runtime,
+      handle: initialized.handle,
+    };
     initializedBackend = initialized.handle.backend || initialized.meta.backend;
     initializedMeta = initialized.meta;
   } catch (err) {
@@ -540,6 +554,28 @@ export async function handleAcpSpawnAction(
         error: err,
         fallbackCode: "ACP_SESSION_INIT_FAILED",
         fallbackMessage: "Could not initialize ACP session runtime.",
+      }),
+    );
+  }
+
+  try {
+    if (initializedStatusProbe?.runtime.getStatus) {
+      await initializedStatusProbe.runtime.getStatus({
+        handle: initializedStatusProbe.handle,
+      });
+    }
+  } catch (err) {
+    await cleanupFailedSpawn({
+      cfg: params.cfg,
+      sessionKey,
+      shouldDeleteSession: true,
+      initializedRuntime,
+    });
+    return stopWithText(
+      collectAcpErrorText({
+        error: err,
+        fallbackCode: "ACP_TURN_FAILED",
+        fallbackMessage: "ACP session failed health checks immediately after spawn.",
       }),
     );
   }
