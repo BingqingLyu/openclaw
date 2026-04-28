@@ -1120,7 +1120,7 @@ export async function runHeartbeatOnce(opts: {
       normalized.shouldSkip = false;
     }
     const shouldSkipMain = normalized.shouldSkip && !normalized.hasMedia && !hasExecCompletion;
-    if (shouldSkipMain && reasoningPayloads.length === 0) {
+    if (shouldSkipMain) {
       await restoreHeartbeatUpdatedAt({
         storePath,
         sessionKey,
