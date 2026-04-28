@@ -1,8 +1,12 @@
 export {
   dedupeDreamDiaryEntries,
-  removeBackfillDiaryEntries,
+  filterRecallEntriesWithinLookback,
   previewGroundedRemMarkdown,
+  previewRemDreaming,
+  rankShortTermPromotionCandidates,
+  readShortTermRecallEntries,
+  removeBackfillDiaryEntries,
+  removeGroundedShortTermCandidates,
   repairDreamingArtifacts,
   writeBackfillDiaryEntries,
-  removeGroundedShortTermCandidates,
 } from "../../plugin-sdk/memory-core-bundled-runtime.js";

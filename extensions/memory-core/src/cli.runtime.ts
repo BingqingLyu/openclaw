@@ -9,10 +9,10 @@ import {
   colorize,
   defaultRuntime,
   formatErrorMessage,
+  getRuntimeConfig,
   getMemorySearchManager,
   isRich,
   listMemoryFiles,
-  loadConfig,
   normalizeExtraMemoryPaths,
   resolveCommandSecretRefsViaGateway,
   resolveDefaultAgentId,
@@ -36,7 +36,11 @@ import type {
   MemorySearchCommandOptions,
 } from "./cli.types.js";
 import { removeBackfillDiaryEntries, writeBackfillDiaryEntries } from "./dreaming-narrative.js";
-import { previewRemDreaming, seedHistoricalDailyMemorySignals } from "./dreaming-phases.js";
+import {
+  filterRecallEntriesWithinLookback,
+  previewRemDreaming,
+  seedHistoricalDailyMemorySignals,
+} from "./dreaming-phases.js";
 import {
   auditDreamingArtifacts,
   repairDreamingArtifacts,
@@ -92,7 +96,7 @@ function getMemoryCommandSecretTargetIds(): Set<string> {
 
 async function loadMemoryCommandConfig(commandName: string): Promise<LoadedMemoryCommandConfig> {
   const { resolvedConfig, diagnostics } = await resolveCommandSecretRefsViaGateway({
-    config: loadConfig(),
+    config: getRuntimeConfig(),
     commandName,
     targetIds: getMemoryCommandSecretTargetIds(),
   });
@@ -680,7 +684,7 @@ export async function runMemoryStatus(opts: MemoryCommandOptions) {
   }> = [];
 
   for (const agentId of agentIds) {
-    const managerPurpose = opts.index ? "default" : "status";
+    const managerPurpose = opts.index ? "cli" : "status";
     await withMemoryManagerForAgent({
       cfg,
       agentId,
@@ -1025,6 +1029,7 @@ export async function runMemoryIndex(opts: MemoryCommandOptions) {
     await withMemoryManagerForAgent({
       cfg,
       agentId,
+      purpose: "cli",
       run: async (manager) => {
         try {
           const syncFn = manager.sync ? manager.sync.bind(manager) : undefined;
@@ -1177,6 +1182,7 @@ export async function runMemorySearch(
   await withMemoryManagerForAgent({
     cfg,
     agentId,
+    purpose: "cli",
     run: async (manager) => {
       const sessionKey = buildCliMemorySearchSessionKey(agentId);
       let results: Awaited<ReturnType<typeof manager.search>>;
@@ -1587,10 +1593,11 @@ export async function runMemoryRemHarness(opts: MemoryRemHarnessOptions) {
         if (groundedInputPaths.length === 0 && opts.grounded) {
           groundedInputPaths = await listWorkspaceDailyFiles(workspaceDir, remConfig.limit);
         }
-        const cutoffMs = nowMs - Math.max(0, remConfig.lookbackDays) * 24 * 60 * 60 * 1000;
-        const recallEntries = (await readShortTermRecallEntries({ workspaceDir, nowMs })).filter(
-          (entry) => Date.parse(entry.lastRecalledAt) >= cutoffMs,
-        );
+        const recallEntries = filterRecallEntriesWithinLookback({
+          entries: await readShortTermRecallEntries({ workspaceDir, nowMs }),
+          nowMs,
+          lookbackDays: remConfig.lookbackDays,
+        });
         const remPreview = previewRemDreaming({
           entries: recallEntries,
           limit: remConfig.limit,

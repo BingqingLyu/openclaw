@@ -1,4 +1,4 @@
-export type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
+export type { OpenClawConfig } from "openclaw/plugin-sdk/config-types";
 export type {
   MemoryEmbeddingProbeResult,
   MemoryProviderStatus,
@@ -10,3 +10,14 @@ export {
   writeBackfillDiaryEntries,
 } from "./src/dreaming-narrative.js";
 export { previewGroundedRemMarkdown } from "./src/rem-evidence.js";
+export { filterRecallEntriesWithinLookback, previewRemDreaming } from "./src/dreaming-phases.js";
+export type { RemDreamingPreview } from "./src/dreaming-phases.js";
+export {
+  rankShortTermPromotionCandidates,
+  readShortTermRecallEntries,
+} from "./src/short-term-promotion.js";
+export type {
+  PromotionCandidate,
+  RankShortTermPromotionOptions,
+  ShortTermRecallEntry,
+} from "./src/short-term-promotion.js";
