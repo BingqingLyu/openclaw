@@ -999,6 +999,16 @@ export function minSecurity(a: ExecSecurity, b: ExecSecurity): ExecSecurity {
   return order[a] <= order[b] ? a : b;
 }
 
+/**
+ * Returns the more permissive (higher) of two security values.
+ * Used to enforce configuredSecurity as a floor: when an operator sets a
+ * policy level, a model-supplied argument can only tighten it, never loosen it.
+ */
+export function maxSecurity(a: ExecSecurity, b: ExecSecurity): ExecSecurity {
+  const order: Record<ExecSecurity, number> = { deny: 0, allowlist: 1, full: 2 };
+  return order[a] >= order[b] ? a : b;
+}
+
 export function maxAsk(a: ExecAsk, b: ExecAsk): ExecAsk {
   const order: Record<ExecAsk, number> = { off: 0, "on-miss": 1, always: 2 };
   return order[a] >= order[b] ? a : b;

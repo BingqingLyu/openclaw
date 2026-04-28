@@ -1480,8 +1480,10 @@ export function createExecTool(
       const approvalDefaults = loadExecApprovals().defaults;
       const configuredSecurity =
         defaults?.security ?? approvalDefaults?.security ?? (host === "sandbox" ? "deny" : "full");
-      const requestedSecurity = normalizeExecSecurity(params.security);
-      let security = minSecurity(configuredSecurity, requestedSecurity ?? configuredSecurity);
+      // The operator's configured security is final, so model-supplied security
+      // args are ignored entirely. The only legitimate override is elevated mode,
+      // because that permission is granted explicitly by the operator.
+      let security = configuredSecurity;
       if (elevatedRequested && elevatedMode === "full") {
         security = "full";
       }

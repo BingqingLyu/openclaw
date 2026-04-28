@@ -13,6 +13,7 @@ import {
   evaluateExecAllowlist,
   hasDurableExecApproval,
   maxAsk,
+  maxSecurity,
   minSecurity,
   type ExecApprovalsFile,
   normalizeExecAsk,
@@ -103,6 +104,15 @@ describe("exec approvals policy helpers", () => {
     },
   ])("minSecurity picks the more restrictive value for %j", ({ left, right, expected }) => {
     expect(minSecurity(left, right)).toBe(expected);
+  });
+
+  it.each([
+    { left: "full" as const, right: "allowlist" as const, expected: "full" as const },
+    { left: "allowlist" as const, right: "deny" as const, expected: "allowlist" as const },
+    { left: "deny" as const, right: "full" as const, expected: "full" as const },
+    { left: "full" as const, right: "full" as const, expected: "full" as const },
+  ])("maxSecurity picks the more permissive value for %j", ({ left, right, expected }) => {
+    expect(maxSecurity(left, right)).toBe(expected);
   });
 
   it.each([
