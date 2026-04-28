@@ -32,7 +32,7 @@ import type {
   ChannelId,
   ChannelPlugin,
 } from "../channels/plugins/types.public.js";
-import { loadConfig } from "../config/config.js";
+import { getRuntimeConfig } from "../config/config.js";
 import {
   canonicalizeMainSessionAlias,
   resolveAgentMainSessionKey,
@@ -59,11 +59,13 @@ import {
   toAgentStoreSessionKey,
 } from "../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
+import { isDirectSessionKey, isMainSessionKey } from "../sessions/session-key-utils.js";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "../shared/string-coerce.js";
 import { escapeRegExp } from "../utils.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { MAX_SAFE_TIMEOUT_DELAY_MS, resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
 import { loadOrCreateDeviceIdentity } from "./device-identity.js";
 import { formatErrorMessage, hasErrnoCode } from "./errors.js";
@@ -646,6 +648,57 @@ type HeartbeatPromptResolution = {
   hasCronEvents: boolean;
 };
 
+function isRelayableInternalRouteTarget(raw?: string): boolean {
+  const target = normalizeOptionalString(raw);
+  if (!target) {
+    return false;
+  }
+  const normalized = normalizeLowercaseStringOrEmpty(target);
+  if (!normalized) {
+    return false;
+  }
+  return normalized !== "heartbeat" && normalized !== "web" && !normalized.startsWith("session:");
+}
+
+function canRelayHeartbeatPromptsToUser(params: {
+  delivery: ReturnType<typeof resolveHeartbeatDeliveryTarget>;
+  visibility: { showAlerts: boolean };
+  sessionKey: string;
+  sessionEntry?: {
+    chatType?: string;
+    lastChannel?: string;
+    lastTo?: string;
+    deliveryContext?: { channel?: string; to?: string };
+  };
+}): boolean {
+  if (params.delivery.channel !== "none" && params.delivery.to && params.visibility.showAlerts) {
+    return true;
+  }
+  if (
+    !params.visibility.showAlerts ||
+    (!isMainSessionKey(params.sessionKey) && !isDirectSessionKey(params.sessionKey))
+  ) {
+    return false;
+  }
+
+  const sessionRouteChannel = normalizeLowercaseStringOrEmpty(
+    params.sessionEntry?.deliveryContext?.channel ?? params.sessionEntry?.lastChannel,
+  );
+  if (sessionRouteChannel !== INTERNAL_MESSAGE_CHANNEL) {
+    return false;
+  }
+
+  const sessionRouteTo = normalizeOptionalString(
+    params.sessionEntry?.deliveryContext?.to ?? params.sessionEntry?.lastTo,
+  );
+  if (!isRelayableInternalRouteTarget(sessionRouteTo)) {
+    return false;
+  }
+
+  const chatType = normalizeLowercaseStringOrEmpty(params.sessionEntry?.chatType);
+  return isMainSessionKey(params.sessionKey) ? chatType === "direct" : true;
+}
+
 function appendHeartbeatWorkspacePathHint(prompt: string, workspaceDir: string): string {
   if (!/heartbeat\.md/i.test(prompt)) {
     return prompt;
@@ -732,7 +785,7 @@ export async function runHeartbeatOnce(opts: {
   reason?: string;
   deps?: HeartbeatDeps;
 }): Promise<HeartbeatRunResult> {
-  const cfg = opts.cfg ?? loadConfig();
+  const cfg = opts.cfg ?? getRuntimeConfig();
   const explicitAgentId = typeof opts.agentId === "string" ? opts.agentId.trim() : "";
   const forcedSessionAgentId =
     explicitAgentId.length > 0 ? undefined : parseAgentSessionKey(opts.sessionKey)?.agentId;
@@ -837,9 +890,12 @@ export async function runHeartbeatOnce(opts: {
     accountId: delivery.accountId,
   }).responsePrefix;
 
-  const canRelayToUser = Boolean(
-    delivery.channel !== "none" && delivery.to && visibility.showAlerts,
-  );
+  const canRelayToUser = canRelayHeartbeatPromptsToUser({
+    delivery,
+    visibility,
+    sessionKey,
+    sessionEntry: entry,
+  });
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
   const { prompt, hasExecCompletion, hasCronEvents } = resolveHeartbeatRunPrompt({
     cfg,
@@ -1323,7 +1379,7 @@ export function startHeartbeatRunner(opts: {
   const runtime = opts.runtime ?? defaultRuntime;
   const runOnce = opts.runOnce ?? runHeartbeatOnce;
   const state = {
-    cfg: opts.cfg ?? loadConfig(),
+    cfg: opts.cfg ?? getRuntimeConfig(),
     runtime,
     schedulerSeed: resolveHeartbeatSchedulerSeed(opts.stableSchedulerSeed),
     agents: new Map<string, HeartbeatAgentState>(),
