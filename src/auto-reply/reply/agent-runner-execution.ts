@@ -92,6 +92,7 @@ const GPT_CHAT_BREVITY_ACK_MAX_CHARS = 420;
 const GPT_CHAT_BREVITY_ACK_MAX_SENTENCES = 3;
 const GPT_CHAT_BREVITY_SOFT_MAX_CHARS = 900;
 const GPT_CHAT_BREVITY_SOFT_MAX_SENTENCES = 6;
+const DEFAULT_CONTEXT_OVERFLOW_RESERVE_TOKENS_FLOOR = 20_000;
 
 function readApprovalScopeValue(value: unknown): "turn" | "session" | undefined {
   return value === "turn" || value === "session" ? value : undefined;
@@ -132,6 +133,34 @@ type FallbackSelectionState = Pick<
   | "authProfileOverrideSource"
   | "authProfileOverrideCompactionCount"
 >;
+
+export function buildContextOverflowResetMessage(params?: {
+  reserveTokensFloor?: number;
+  duringCompaction?: boolean;
+}): string {
+  const reserveTokensFloor =
+    typeof params?.reserveTokensFloor === "number" && Number.isFinite(params.reserveTokensFloor)
+      ? Math.max(0, Math.floor(params.reserveTokensFloor))
+      : undefined;
+  const intro = params?.duringCompaction
+    ? "⚠️ Context limit exceeded during compaction. I've reset our conversation to start fresh, please try again."
+    : "⚠️ Context limit exceeded. I've reset our conversation to start fresh, please try again.";
+
+  if (
+    typeof reserveTokensFloor !== "number" ||
+    reserveTokensFloor < DEFAULT_CONTEXT_OVERFLOW_RESERVE_TOKENS_FLOOR
+  ) {
+    return (
+      intro +
+      "\n\nTo reduce repeats, increase `agents.defaults.compaction.reserveTokensFloor` to 20000 or higher in your config."
+    );
+  }
+
+  return (
+    intro +
+    `\n\nYour compaction reserve floor is already ${reserveTokensFloor}, so increasing that setting further is unlikely to help. This usually points to a single oversized turn or recent context that could not be compacted enough.`
+  );
+}
 
 const FALLBACK_SELECTION_STATE_KEYS = [
   "providerOverride",
@@ -675,6 +704,8 @@ export async function runAgentTurnWithFallback(params: {
   // Track payloads sent directly (not via pipeline) during tool flush to avoid duplicates.
   const directlySentBlockKeys = new Set<string>();
   const runtimeConfig = resolveQueuedReplyRuntimeConfig(params.followupRun.run.config);
+  const reserveTokensFloor =
+    runtimeConfig?.agents?.defaults?.compaction?.reserveTokensFloor;
   const effectiveRun =
     runtimeConfig === params.followupRun.run.config
       ? params.followupRun.run
@@ -1473,7 +1504,7 @@ export async function runAgentTurnWithFallback(params: {
         return {
           kind: "final",
           payload: {
-            text: "⚠️ Context limit exceeded. I've reset our conversation to start fresh - please try again.\n\nTo prevent this, increase your compaction buffer by setting `agents.defaults.compaction.reserveTokensFloor` to 20000 or higher in your config.",
+            text: buildContextOverflowResetMessage({ reserveTokensFloor }),
           },
         };
       }
@@ -1593,7 +1624,10 @@ export async function runAgentTurnWithFallback(params: {
         return {
           kind: "final",
           payload: {
-            text: "⚠️ Context limit exceeded during compaction. I've reset our conversation to start fresh - please try again.\n\nTo prevent this, increase your compaction buffer by setting `agents.defaults.compaction.reserveTokensFloor` to 20000 or higher in your config.",
+            text: buildContextOverflowResetMessage({
+              reserveTokensFloor,
+              duringCompaction: true,
+            }),
           },
         };
       }
