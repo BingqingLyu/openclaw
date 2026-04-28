@@ -375,6 +375,16 @@ export function registerAmazonBedrockPlugin(api: OpenClawPluginApi): void {
     },
     resolveConfigApiKey: ({ env }) => resolveBedrockConfigApiKey(env),
     ...anthropicByModelReplayHooks,
+    buildReplayPolicy: (ctx) => {
+      const base = anthropicByModelReplayHooks.buildReplayPolicy?.(ctx);
+      // Non-Claude Bedrock models (e.g. Amazon Nova) require conversations to
+      // start with a user message.  Claude tolerates an assistant-first history,
+      // so only enable the ordering fix for non-Claude models.
+      if (ctx.modelId && !isAnthropicBedrockModel(ctx.modelId)) {
+        return { ...base, applyAssistantFirstOrderingFix: true };
+      }
+      return base;
+    },
     wrapStreamFn: ({ modelId, config, model, streamFn }) => {
       const currentGuardrail = resolveCurrentPluginConfig(config)?.guardrail;
       // Apply cache + guardrail wrapping.
