@@ -141,6 +141,41 @@ describe("overflow compaction in run loop", () => {
     expect(mockedLog.warn).toHaveBeenCalledWith(expect.stringContaining("auto-compaction failed"));
   });
 
+  it("makes at most one fallback truncation attempt after a failed overflow compaction", async () => {
+    queueOverflowAttemptWithOversizedToolOutput(mockedRunEmbeddedAttempt, makeOverflowError());
+
+    mockedCompactDirect
+      .mockResolvedValueOnce({
+        ok: false,
+        compacted: false,
+        reason: "nothing to compact",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        compacted: false,
+        reason: "nothing to compact",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        compacted: false,
+        reason: "nothing to compact",
+      });
+    mockedSessionLikelyHasOversizedToolResults.mockReturnValue(true);
+
+    const result = await runEmbeddedPiAgent({
+      ...baseParams,
+      model: "gpt-5.4",
+    });
+
+    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
+    expect(mockedTruncateOversizedToolResultsInSession).toHaveBeenCalledTimes(1);
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    expect(mockedLog.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Tool result truncation did not help"),
+    );
+    expect(result.meta.error?.kind).toBe("context_overflow");
+  });
+
   it("falls back to tool-result truncation and retries when oversized results are detected", async () => {
     queueOverflowAttemptWithOversizedToolOutput(mockedRunEmbeddedAttempt, makeOverflowError());
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
@@ -319,6 +354,34 @@ describe("overflow compaction in run loop", () => {
     expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
     expect(mockedLog.info).toHaveBeenCalledWith(
       expect.stringContaining("post-compaction tool-result truncation succeeded"),
+    );
+    expect(result.meta.error).toBeUndefined();
+  });
+
+  it("forwards attempt-estimated context tokens into overflow compaction when provider counts are unavailable", async () => {
+    mockedRunEmbeddedAttempt
+      .mockResolvedValueOnce(
+        makeAttemptResult({
+          promptError: makeOverflowError(
+            "Context overflow: prompt too large for the model (precheck).",
+          ),
+          estimatedContextTokens: 211234,
+        }),
+      )
+      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    mockedCompactDirect.mockResolvedValueOnce(
+      makeCompactionSuccess({
+        summary: "Compacted after local overflow estimate",
+        firstKeptEntryId: "entry-9",
+        tokensBefore: 211234,
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent(baseParams);
+
+    expect(mockedCompactDirect).toHaveBeenCalledWith(
+      expect.objectContaining({ currentTokenCount: 211234 }),
     );
     expect(result.meta.error).toBeUndefined();
   });
