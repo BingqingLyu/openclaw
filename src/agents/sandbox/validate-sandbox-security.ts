@@ -116,15 +116,15 @@ export function normalizeHostPath(raw: string): string {
  */
 export function getBlockedBindReason(bind: string): BlockedBindReason | null {
   const sourceRaw = parseBindSourcePath(bind);
-  if (!sourceRaw.startsWith("/")) {
-    return { kind: "non_absolute", sourcePath: sourceRaw };
-  }
-
   const normalized = normalizeHostPath(sourceRaw);
   const blockedHostPaths = getBlockedHostPaths();
   const directReason = getBlockedReasonForSourcePath(normalized, blockedHostPaths);
   if (directReason) {
     return directReason;
+  }
+
+  if (!sourceRaw.startsWith("/")) {
+    return { kind: "non_absolute", sourcePath: sourceRaw };
   }
 
   const canonical = resolveSandboxHostPathViaExistingAncestor(normalized);
@@ -156,6 +156,7 @@ function getBlockedHostPaths(): string[] {
     home: process.env.HOME,
     openclawHome: process.env.OPENCLAW_HOME,
     osHome: os.homedir(),
+    userProfile: process.env.USERPROFILE,
   });
   if (blockedHostPathsCache?.key === cacheKey) {
     return blockedHostPathsCache.paths;
@@ -173,9 +174,15 @@ function getBlockedHostPaths(): string[] {
 function getBlockedHomeRoots(): string[] {
   const roots = new Set<string>();
   for (const candidate of [
+    process.env.OPENCLAW_HOME,
+    process.env.HOME,
+    process.env.USERPROFILE,
     resolveRequiredHomeDir(process.env, os.homedir),
     resolveRequiredOsHomeDir(process.env, os.homedir),
   ]) {
+    if (!candidate) {
+      continue;
+    }
     const normalized = normalizeHostPath(candidate);
     if (normalized !== "/") {
       roots.add(normalized);
