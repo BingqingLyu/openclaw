@@ -5,9 +5,9 @@ import { getModel, type Api, type Model } from "@mariozechner/pi-ai";
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import OpenAI from "openai";
 import type { ResolvedTtsConfig } from "openclaw/plugin-sdk/agent-runtime";
-import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
-import { loadConfig } from "openclaw/plugin-sdk/config-runtime";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-types";
 import { encodePngRgba, fillPixel } from "openclaw/plugin-sdk/media-runtime";
+import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { describe, expect, it } from "vitest";
 import {
   registerProviderPlugin,
@@ -100,7 +100,7 @@ function createReferencePng(): Buffer {
 }
 
 function createLiveConfig(): OpenClawConfig {
-  const cfg = loadConfig();
+  const cfg = getRuntimeConfig();
   return {
     ...cfg,
     models: {
@@ -223,8 +223,11 @@ describeLive("openai plugin live", () => {
     });
     const response = await client.responses.create({
       model: normalized?.id ?? LIVE_MODEL_ID,
-      input: "Reply with exactly OK.",
-      max_output_tokens: 16,
+      instructions: "Return exactly OK and no other text.",
+      input: "Return exactly OK.",
+      max_output_tokens: 64,
+      reasoning: { effort: "none" },
+      text: { verbosity: "low" },
     });
 
     expect(response.output_text.trim()).toMatch(/^OK[.!]?$/);
@@ -274,7 +277,7 @@ describeLive("openai plugin live", () => {
     const ttsConfig = createLiveTtsConfig();
 
     const synthesized = await speechProvider.synthesize({
-      text: "OpenClaw integration test OK.",
+      text: "Open claw. Open claw. Integration test OK.",
       cfg,
       providerConfig: ttsConfig.providerConfigs.openai ?? {},
       target: "audio-file",
@@ -349,11 +352,12 @@ describeLive("openai plugin live", () => {
         silenceDurationMs: 500,
       },
       audio,
+      expectedNormalizedText: /openai.*realtime.*transcription/,
     });
 
     const normalized = transcripts.join(" ").toLowerCase();
     const compact = normalizeTranscriptForMatch(normalized);
-    expect(compact).toContain("openclaw");
+    expect(compact).toContain("openai");
     expect(normalized).toContain("transcription");
     expect(partials.length + transcripts.length).toBeGreaterThan(0);
   }, 180_000);
