@@ -40,6 +40,10 @@ import {
 } from "./subagent-announce-dispatch.js";
 import { resolveAnnounceOrigin, type DeliveryContext } from "./subagent-announce-origin.js";
 import { type AnnounceQueueItem, enqueueAnnounce } from "./subagent-announce-queue.js";
+import {
+  markSubagentAnnounceDelivered,
+  markSubagentAnnouncePending,
+} from "./subagent-registry-announce-state.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { resolveRequesterStoreKey } from "./subagent-requester-store-key.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.types.js";
@@ -399,6 +403,11 @@ async function sendAnnounce(item: AnnounceQueueItem) {
     },
     timeoutMs: announceTimeoutMs,
   });
+  markSubagentAnnounceDelivered({
+    announceId: item.announceId,
+    sourceRunId: item.sourceRunId,
+    sourceSessionKey: item.sourceSessionKey,
+  });
 }
 
 export function loadRequesterSessionEntry(requesterSessionKey: string) {
@@ -437,6 +446,7 @@ async function maybeQueueSubagentAnnounce(params: {
   sourceSessionKey?: string;
   sourceChannel?: string;
   sourceTool?: string;
+  sourceRunId?: string;
   internalEvents?: AgentInternalEvent[];
   signal?: AbortSignal;
 }): Promise<"steered" | "queued" | "none" | "dropped"> {
@@ -484,6 +494,7 @@ async function maybeQueueSubagentAnnounce(params: {
         enqueuedAt: Date.now(),
         sessionKey: canonicalKey,
         origin,
+        sourceRunId: params.sourceRunId,
         sourceSessionKey: params.sourceSessionKey,
         sourceChannel: params.sourceChannel,
         sourceTool: params.sourceTool,
@@ -492,6 +503,13 @@ async function maybeQueueSubagentAnnounce(params: {
       send: sendAnnounce,
       shouldDefer: (item) => resolveRequesterSessionActivity(item.sessionKey).isActive,
     });
+    if (didQueue) {
+      markSubagentAnnouncePending({
+        announceId: params.announceId,
+        sourceRunId: params.sourceRunId,
+        sourceSessionKey: params.sourceSessionKey,
+      });
+    }
     return didQueue ? "queued" : "dropped";
   }
 
@@ -637,6 +655,7 @@ async function sendSubagentAnnounceDirectly(params: {
   sourceSessionKey?: string;
   sourceChannel?: string;
   sourceTool?: string;
+  sourceRunId?: string;
   requesterIsSubagent: boolean;
   signal?: AbortSignal;
 }): Promise<SubagentAnnounceDeliveryResult> {
@@ -871,6 +890,7 @@ export async function deliverSubagentAnnouncement(params: {
   sourceSessionKey?: string;
   sourceChannel?: string;
   sourceTool?: string;
+  sourceRunId?: string;
   targetRequesterSessionKey: string;
   requesterIsSubagent: boolean;
   expectsCompletionMessage: boolean;
@@ -889,6 +909,7 @@ export async function deliverSubagentAnnouncement(params: {
         steerMessage: params.steerMessage,
         summaryLine: params.summaryLine,
         requesterOrigin: params.requesterOrigin,
+        sourceRunId: params.sourceRunId,
         sourceSessionKey: params.sourceSessionKey,
         sourceChannel: params.sourceChannel,
         sourceTool: params.sourceTool,
@@ -904,6 +925,7 @@ export async function deliverSubagentAnnouncement(params: {
         completionDirectOrigin: params.completionDirectOrigin,
         directOrigin: params.directOrigin,
         requesterSessionOrigin: params.requesterSessionOrigin,
+        sourceRunId: params.sourceRunId,
         sourceSessionKey: params.sourceSessionKey,
         sourceChannel: params.sourceChannel,
         sourceTool: params.sourceTool,

@@ -62,6 +62,7 @@ import {
   persistSubagentRunsToDisk,
   restoreSubagentRunsFromDisk,
 } from "./subagent-registry-state.js";
+import { clearStaleSubagentAnnouncePendingState, configureSubagentAnnounceState } from "./subagent-registry-announce-state.js";
 import { configureSubagentRegistrySteerRuntime } from "./subagent-registry-steer-runtime.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
@@ -659,6 +660,10 @@ function resumeSubagentRun(runId: string) {
   resumedRuns.add(runId);
 }
 
+configureSubagentAnnounceState({
+  resumeSubagentRun,
+});
+
 function restoreSubagentRunsOnce() {
   if (restoreAttempted) {
     return;
@@ -678,6 +683,9 @@ function restoreSubagentRunsOnce() {
         resumedRuns,
       })
     ) {
+      persistSubagentRuns();
+    }
+    if (clearStaleSubagentAnnouncePendingState()) {
       persistSubagentRuns();
     }
     if (subagentRuns.size === 0) {

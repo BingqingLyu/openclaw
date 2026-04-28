@@ -30,6 +30,7 @@ export type AnnounceQueueItem = {
   sourceSessionKey?: string;
   sourceChannel?: string;
   sourceTool?: string;
+  sourceRunId?: string;
 };
 
 export type AnnounceQueueSettings = {
