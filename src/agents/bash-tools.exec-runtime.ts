@@ -13,6 +13,7 @@ import { isDangerousHostInheritedEnvVarName } from "../infra/host-env-security.j
 import { findPathKey, mergePathPrepend } from "../infra/path-prepend.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { scopedHeartbeatWakeOptions } from "../routing/session-key.js";
+import { isSubagentSessionKey } from "../sessions/session-key-utils.js";
 import type { ProcessSession } from "./bash-process-registry.js";
 import type { ExecToolDetails } from "./bash-tools.exec-types.js";
 import type { BashSandboxConfig } from "./bash-tools.shared.js";
@@ -340,9 +341,13 @@ function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "faile
     deliveryContext: session.notifyDeliveryContext,
     trusted: false,
   });
-  requestHeartbeatNow(
-    scopedHeartbeatWakeOptions(sessionKey, { reason: "exec-event", coalesceMs: 0 }),
-  );
+  // Subagent sessions receive exec results via process poll; the heartbeat
+  // would fall back to the main session and cause spurious wake-ups.
+  if (!isSubagentSessionKey(sessionKey)) {
+    requestHeartbeatNow(
+      scopedHeartbeatWakeOptions(sessionKey, { reason: "exec-event", coalesceMs: 0 }),
+    );
+  }
 }
 
 export function createApprovalSlug(id: string) {
@@ -418,9 +423,13 @@ export function emitExecSystemEvent(
     contextKey: opts.contextKey,
     deliveryContext: opts.deliveryContext,
   });
-  requestHeartbeatNow(
-    scopedHeartbeatWakeOptions(sessionKey, { reason: "exec-event", coalesceMs: 0 }),
-  );
+  // Subagent sessions receive exec results via process poll; the heartbeat
+  // would fall back to the main session and cause spurious wake-ups.
+  if (!isSubagentSessionKey(sessionKey)) {
+    requestHeartbeatNow(
+      scopedHeartbeatWakeOptions(sessionKey, { reason: "exec-event", coalesceMs: 0 }),
+    );
+  }
 }
 
 function joinExecFailureOutput(aggregated: string, reason: string) {
