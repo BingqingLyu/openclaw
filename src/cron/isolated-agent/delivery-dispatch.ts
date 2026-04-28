@@ -374,6 +374,81 @@ export function getCompletedDirectCronDeliveriesCountForTests(): number {
   return COMPLETED_DIRECT_CRON_DELIVERIES.size;
 }
 
+// ---------------------------------------------------------------------------
+// Slot-level delivery deduplication.
+//
+// The execution-level idempotency cache above is keyed by `executionId =
+// createCronExecutionId(jobId, runStartedAt)`, so it only prevents replay
+// within a single execution.  If the same cron job fires twice for the
+// **same scheduled time slot** with different `runStartedAt` values (e.g.
+// restart catch-up replaying a slot the original run already delivered, or
+// a same-process timer edge case), each run gets a fresh execution ID and
+// bypasses the cache.  This slot-level guard closes that gap by tracking
+// `jobId + scheduledAtMs + deliveryTarget` regardless of execution.
+//
+// Scope: this is a process-local Map.  Cross-process races require
+// persistent state (Redis / DB / file lock) and are out of scope here;
+// the TTL and LRU cap are sized accordingly.
+// ---------------------------------------------------------------------------
+
+const COMPLETED_SLOT_DELIVERIES = new Map<string, number>();
+
+function buildSlotDeliveryKey(
+  jobId: string,
+  scheduledAtMs: number,
+  delivery: SuccessfulDeliveryTarget,
+): string {
+  const normalizedTo = normalizeDeliveryTarget(delivery.channel, delivery.to);
+  const accountId = delivery.accountId?.trim() ?? "";
+  return `cron-slot:v1:${jobId}:${scheduledAtMs}:${delivery.channel}:${accountId}:${normalizedTo}`;
+}
+
+function pruneSlotDeliveries(now: number) {
+  // 1h TTL: this is process-local memory and gets cleared on restart, so a
+  // longer TTL adds memory pressure without buying durability.  ~1h covers
+  // typical restart catch-up windows and a few cron intervals.
+  const ttlMs = process.env.OPENCLAW_TEST_FAST === "1" ? 60_000 : 60 * 60 * 1000;
+  for (const [key, ts] of COMPLETED_SLOT_DELIVERIES) {
+    if (now - ts >= ttlMs) {
+      COMPLETED_SLOT_DELIVERIES.delete(key);
+    }
+  }
+  const maxEntries = 2000;
+  if (COMPLETED_SLOT_DELIVERIES.size <= maxEntries) {
+    return;
+  }
+  const entries = [...COMPLETED_SLOT_DELIVERIES.entries()].toSorted((a, b) => a[1] - b[1]);
+  const toDelete = COMPLETED_SLOT_DELIVERIES.size - maxEntries;
+  for (let i = 0; i < toDelete; i += 1) {
+    const oldest = entries[i];
+    if (!oldest) {
+      break;
+    }
+    COMPLETED_SLOT_DELIVERIES.delete(oldest[0]);
+  }
+}
+
+function recordSlotDelivery(key: string) {
+  // Pruning is intentionally skipped here: every call site is preceded by
+  // wasSlotAlreadyDelivered() in the same delivery cycle, which already
+  // prunes. A second prune would see an already-pruned map.
+  COMPLETED_SLOT_DELIVERIES.set(key, Date.now());
+}
+
+function wasSlotAlreadyDelivered(key: string): boolean {
+  const now = Date.now();
+  pruneSlotDeliveries(now);
+  return COMPLETED_SLOT_DELIVERIES.has(key);
+}
+
+export function resetSlotDeliveriesForTests() {
+  COMPLETED_SLOT_DELIVERIES.clear();
+}
+
+export function getSlotDeliveriesCountForTests(): number {
+  return COMPLETED_SLOT_DELIVERIES.size;
+}
+
 function summarizeDirectCronDeliveryError(error: unknown): string {
   if (error instanceof Error) {
     return error.message || "error";
@@ -581,6 +656,19 @@ export async function dispatchCronDelivery(
         delivered = true;
         return null;
       }
+      // Slot-level dedup: prevent duplicate delivery when the same job fires
+      // twice for the same scheduled slot with different `runStartedAt`
+      // values (e.g. restart catch-up replaying a slot).  Same-process scope
+      // only — see the COMPLETED_SLOT_DELIVERIES comment header for details.
+      const scheduledAtMs = resolveCronDeliveryScheduledAtMs({
+        job: params.job,
+        runStartedAt: params.runStartedAt,
+      });
+      const slotKey = buildSlotDeliveryKey(params.job.id, scheduledAtMs, delivery);
+      if (wasSlotAlreadyDelivered(slotKey)) {
+        delivered = true;
+        return null;
+      }
       const deliverySession = buildOutboundSessionContext({
         cfg: params.cfgWithAgentDefaults,
         agentId: params.agentId,
@@ -645,6 +733,7 @@ export async function dispatchCronDelivery(
       }
       if (delivered) {
         rememberCompletedDirectCronDelivery(deliveryIdempotencyKey, deliveryResults);
+        recordSlotDelivery(slotKey);
       }
       return null;
     } catch (err) {

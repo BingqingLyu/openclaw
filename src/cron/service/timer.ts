@@ -1104,6 +1104,7 @@ async function runStartupCatchupCandidate(
       error: result.error,
       summary: result.summary,
       delivered: result.delivered,
+      deliveryAttempted: result.deliveryAttempted,
       sessionId: result.sessionId,
       sessionKey: result.sessionKey,
       model: result.model,
