@@ -44,6 +44,7 @@ import { renderCatNoncePngBase64 } from "./live-image-probe.js";
 import {
   hasExpectedSingleNonce,
   hasExpectedToolNonce,
+  isLikelyToolNonceRefusal,
   shouldRetryExecReadProbe,
   shouldRetryToolReadProbe,
 } from "./live-tool-probe-utils.js";
@@ -82,6 +83,8 @@ const GATEWAY_LIVE_STRIP_SCAFFOLDING_MODEL_KEYS = new Set([
   "openai/gpt-5.4-pro",
 ]);
 const GATEWAY_LIVE_EXEC_READ_NONCE_MISS_SKIP_MODEL_KEYS = new Set([
+  "fireworks/accounts/fireworks/models/glm-5",
+  "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo",
   "google/gemini-3.1-flash-lite-preview",
 ]);
 const GATEWAY_LIVE_TOOL_NONCE_MISS_SKIP_MODEL_KEYS = new Set(["google/gemini-3-flash-preview"]);
@@ -494,6 +497,17 @@ describe("shouldSkipExecReadNonceMissForLiveModel", () => {
     expect(shouldSkipExecReadNonceMissForLiveModel("google/gemini-3.1-flash-lite")).toBe(true);
     expect(shouldSkipExecReadNonceMissForLiveModel("google/gemini-3.1-flash-preview")).toBe(false);
   });
+
+  it("matches hosted Fireworks models that execute but miss readback nonces", () => {
+    expect(
+      shouldSkipExecReadNonceMissForLiveModel("fireworks/accounts/fireworks/models/glm-5"),
+    ).toBe(true);
+    expect(
+      shouldSkipExecReadNonceMissForLiveModel(
+        "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("resolveGatewayLiveModelTimeoutMs", () => {
@@ -633,20 +647,7 @@ function isOpenAIReasoningSequenceError(error: string): boolean {
 }
 
 function isToolNonceRefusal(error: string): boolean {
-  const msg = error.toLowerCase();
-  if (!msg.includes("nonce")) {
-    return false;
-  }
-  return (
-    msg.includes("token") ||
-    msg.includes("secret") ||
-    msg.includes("local file") ||
-    msg.includes("disclose") ||
-    msg.includes("can't help") ||
-    msg.includes("can’t help") ||
-    msg.includes("can't comply") ||
-    msg.includes("can’t comply")
-  );
+  return isLikelyToolNonceRefusal(error);
 }
 
 function isToolNonceProbeMiss(error: string): boolean {

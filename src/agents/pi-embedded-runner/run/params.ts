@@ -17,7 +17,11 @@ import type {
 import type { SkillSnapshot } from "../../skills.js";
 import type { PromptMode } from "../../system-prompt.types.js";
 import type { AuthProfileFailurePolicy } from "./auth-profile-failure-policy.types.js";
-export type { ClientToolDefinition } from "../../command/shared-types.js";
+export {
+  normalizeClientToolDefinitions,
+  normalizeClientToolName,
+  type ClientToolDefinition,
+} from "../../command/shared-types.js";
 
 export type EmbeddedRunTrigger = "cron" | "heartbeat" | "manual" | "memory" | "overflow" | "user";
 
@@ -125,6 +129,7 @@ export type RunEmbeddedPiAgentParams = {
   timeoutMs: number;
   runId: string;
   abortSignal?: AbortSignal;
+  onExecutionStarted?: () => void;
   replyOperation?: ReplyOperation;
   shouldEmitToolResult?: () => boolean;
   shouldEmitToolOutput?: () => boolean;
