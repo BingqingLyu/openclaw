@@ -1,3 +1,4 @@
+import { wrapExternalContent } from "openclaw/plugin-sdk/security-runtime";
 import {
   resolveOutboundMediaUrls,
   resolveTextChunksWithFallback,
@@ -1289,7 +1290,10 @@ async function processMessageAfterDedupe(
     timestamp: message.timestamp,
     previousTimestamp,
     envelope: envelopeOptions,
-    body: baseBody,
+    body: wrapExternalContent(`UNTRUSTED BlueBubbles message body\n${baseBody.trim()}`, {
+      source: "unknown",
+      includeWarning: false,
+    }),
     chatType: isGroup ? "group" : "direct",
     sender: { name: message.senderName || undefined, id: message.senderId },
   });
