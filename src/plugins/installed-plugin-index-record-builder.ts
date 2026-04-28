@@ -43,6 +43,7 @@ function hasRuntimeContractSurface(record: PluginManifestRecord): boolean {
     record.contracts?.webContentExtractors?.length ||
     record.contracts?.webFetchProviders?.length ||
     record.contracts?.webSearchProviders?.length ||
+    record.contracts?.migrationProviders?.length ||
     record.contracts?.memoryEmbeddingProviders?.length ||
     hasKind(record.kind, "memory"),
   );
@@ -84,6 +85,9 @@ function collectCompatCodes(record: PluginManifestRecord): readonly PluginCompat
   }
   if (record.activation?.onRoutes?.length) {
     codes.push("activation-route-hint");
+  }
+  if (record.activation?.onConfigPaths?.length) {
+    codes.push("activation-config-path-hint");
   }
   if (record.activation?.onCapabilities?.length) {
     codes.push("activation-capability-hint");
@@ -262,8 +266,8 @@ export function buildInstalledPluginIndexRecords(params: {
     if (record.enabledByDefault === true) {
       indexRecord.enabledByDefault = true;
     }
-    if (record.syntheticAuthRefs && record.syntheticAuthRefs.length > 0) {
-      indexRecord.syntheticAuthRefs = record.syntheticAuthRefs;
+    if (record.syntheticAuthRefs?.length) {
+      indexRecord.syntheticAuthRefs = [...record.syntheticAuthRefs];
     }
     if (record.setupSource) {
       indexRecord.setupSource = record.setupSource;

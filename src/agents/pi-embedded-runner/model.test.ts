@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { discoverModels } from "../pi-model-discovery.js";
+import { discoverAuthStorage, discoverModels } from "../pi-model-discovery.js";
 import { createProviderRuntimeTestMock } from "./model.provider-runtime.test-support.js";
 
 vi.mock("../model-suppression.js", () => ({
@@ -41,6 +41,7 @@ vi.mock("./openrouter-model-capabilities.js", () => ({
 }));
 
 import type { OpenClawConfig } from "../../config/config.js";
+import { getModelProviderRequestTransport } from "../provider-request-config.js";
 import { buildForwardCompatTemplate } from "./model.forward-compat.test-support.js";
 import { buildInlineProviderModels, resolveModel, resolveModelAsync } from "./model.js";
 import {
@@ -54,6 +55,8 @@ import {
 
 beforeEach(() => {
   resetMockDiscoverModels(discoverModels);
+  vi.mocked(discoverModels).mockClear();
+  vi.mocked(discoverAuthStorage).mockClear();
   mockGetOpenRouterModelCapabilities.mockReset();
   mockGetOpenRouterModelCapabilities.mockReturnValue(undefined);
   mockLoadOpenRouterModelCapabilities.mockReset();
@@ -109,6 +112,27 @@ function resolveModelAsyncForTest(
 }
 
 describe("resolveModel", () => {
+  it("skips PI auth and model discovery during dynamic model resolution", async () => {
+    const result = await resolveModelAsync(
+      "openrouter",
+      "openrouter/auto",
+      "/tmp/agent",
+      undefined,
+      {
+        runtimeHooks: createRuntimeHooks(),
+        skipPiDiscovery: true,
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      provider: "openrouter",
+      id: "openrouter/auto",
+    });
+    expect(discoverAuthStorage).not.toHaveBeenCalled();
+    expect(discoverModels).not.toHaveBeenCalled();
+  });
+
   it("defaults model input to text when discovery omits input", () => {
     mockDiscoveredModel(discoverModels, {
       provider: "custom",
@@ -162,6 +186,36 @@ describe("resolveModel", () => {
     expect(result.model?.baseUrl).toBe("http://localhost:9000");
     expect(result.model?.provider).toBe("custom");
     expect(result.model?.id).toBe("missing-model");
+    expect(result.model?.api).toBe("openai-completions");
+  });
+
+  it("defaults baseUrl-only local custom fallback models to chat completions", () => {
+    const cfg = {
+      agents: {
+        defaults: {
+          model: { primary: "local-agent-proxy/gpt-5.2" },
+        },
+      },
+      models: {
+        providers: {
+          "local-agent-proxy": {
+            baseUrl: "http://127.0.0.1:3000/v1",
+            models: [],
+          },
+        },
+      },
+    } as unknown as OpenClawConfig;
+
+    const result = resolveModelForTest("local-agent-proxy", "gpt-5.2", "/tmp/agent", cfg);
+
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      provider: "local-agent-proxy",
+      id: "gpt-5.2",
+      api: "openai-completions",
+      baseUrl: "http://127.0.0.1:3000/v1",
+    });
+    expect(getModelProviderRequestTransport(result.model ?? {})).toBeUndefined();
   });
 
   it("normalizes Google fallback baseUrls for custom providers", () => {
@@ -672,6 +726,43 @@ describe("resolveModel", () => {
 
     expect(result.model?.id).toBe("vision-model");
     expect(result.model?.input).toEqual(["text"]);
+  });
+
+  it("resolves custom MLX-style Hugging Face ids without adding the provider prefix", () => {
+    const modelId = "mlx-community/Qwen3-30B-A3B-6bit";
+    const cfg = {
+      agents: {
+        defaults: {
+          model: { primary: `mlx/${modelId}` },
+        },
+      },
+      models: {
+        providers: {
+          mlx: {
+            baseUrl: "http://127.0.0.1:8080/v1",
+            apiKey: "mlx-local",
+            api: "openai-completions",
+            models: [
+              {
+                ...makeModel(modelId),
+                contextWindow: 131072,
+                maxTokens: 8192,
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as OpenClawConfig;
+
+    const result = resolveModelForTest("mlx", modelId, "/tmp/agent", cfg);
+
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      provider: "mlx",
+      id: modelId,
+      api: "openai-completions",
+      baseUrl: "http://127.0.0.1:8080/v1",
+    });
   });
 
   it("prefers provider-prefixed configured metadata over discovered text-only models", () => {

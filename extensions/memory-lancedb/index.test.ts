@@ -8,11 +8,14 @@
  * - Auto-capture filtering
  */
 
+import { Buffer } from "node:buffer";
 import { describe, test, expect, vi } from "vitest";
 import memoryPlugin, {
   detectCategory,
   formatRelevantMemoriesContext,
   looksLikePromptInjection,
+  normalizeEmbeddingVector,
+  normalizeRecallQuery,
   shouldCapture,
 } from "./index.js";
 import { createLanceDbRuntimeLoader, type LanceDbRuntimeLogger } from "./lancedb-runtime.js";
@@ -27,6 +30,7 @@ type MemoryPluginTestConfig = {
   };
   dbPath?: string;
   captureMaxChars?: number;
+  recallMaxChars?: number;
   autoCapture?: boolean;
   autoRecall?: boolean;
   storageOptions?: Record<string, string>;
@@ -53,6 +57,10 @@ function createMockModule(): LanceDbModule {
   return {
     connect: vi.fn(),
   } as unknown as LanceDbModule;
+}
+
+function invokeEmbeddingCreate(mock: ReturnType<typeof vi.fn>, body: unknown) {
+  return (mock as unknown as (body: unknown) => unknown)(body);
 }
 
 function createRuntimeLoader(
@@ -117,6 +125,7 @@ describe("memory plugin e2e", () => {
     expect(config?.embedding?.apiKey).toBe(OPENAI_API_KEY);
     expect(config?.dbPath).toBe(getDbPath());
     expect(config?.captureMaxChars).toBe(500);
+    expect(config?.recallMaxChars).toBe(1000);
   });
 
   test("config schema resolves env vars", async () => {
@@ -160,6 +169,24 @@ describe("memory plugin e2e", () => {
     });
 
     expect(config?.captureMaxChars).toBe(1800);
+  });
+
+  test("config schema validates recallMaxChars range", async () => {
+    expect(() => {
+      memoryPlugin.configSchema?.parse?.({
+        embedding: { apiKey: OPENAI_API_KEY },
+        dbPath: getDbPath(),
+        recallMaxChars: 99,
+      });
+    }).toThrow("recallMaxChars must be between 100 and 10000");
+  });
+
+  test("config schema accepts recallMaxChars override", async () => {
+    const config = parseConfig({
+      recallMaxChars: 1800,
+    });
+
+    expect(config?.recallMaxChars).toBe(1800);
   });
 
   test("config schema keeps autoCapture disabled by default", async () => {
@@ -330,7 +357,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -359,6 +388,7 @@ describe("memory plugin e2e", () => {
           dbPath: getDbPath(),
           autoCapture: false,
           autoRecall: true,
+          recallMaxChars: 120,
         },
         runtime: {},
         logger,
@@ -376,8 +406,17 @@ describe("memory plugin e2e", () => {
       )?.[1];
       expect(beforePromptBuild).toBeTypeOf("function");
 
+      const latestUserText = `what editor should i use? ${"with a very long channel metadata tail ".repeat(10)}`;
+      const expectedRecallQuery = normalizeRecallQuery(latestUserText, 120);
       const result = await beforePromptBuild?.(
-        { prompt: "what editor should i use?", messages: [] },
+        {
+          prompt: `discord metadata ${"ignored ".repeat(100)}`,
+          messages: [
+            { role: "user", content: "old preference question" },
+            { role: "assistant", content: "old answer" },
+            { role: "user", content: latestUserText },
+          ],
+        },
         {},
       );
 
@@ -385,9 +424,9 @@ describe("memory plugin e2e", () => {
       expect(ensureGlobalUndiciEnvProxyDispatcher).toHaveBeenCalledOnce();
       expect(embeddingsCreate).toHaveBeenCalledWith({
         model: "text-embedding-3-small",
-        input: "what editor should i use?",
-        encoding_format: "float",
+        input: expectedRecallQuery,
       });
+      expect(expectedRecallQuery).toHaveLength(120);
       expect(vectorSearch).toHaveBeenCalledWith([0.1, 0.2, 0.3]);
       expect(limit).toHaveBeenCalledWith(3);
       expect(result).toMatchObject({
@@ -459,7 +498,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -491,7 +532,7 @@ describe("memory plugin e2e", () => {
         },
         runtime: {
           config: {
-            loadConfig: () => configFile,
+            current: () => configFile,
           },
         },
         logger,
@@ -536,7 +577,6 @@ describe("memory plugin e2e", () => {
       expect(embeddingsCreate).toHaveBeenCalledWith({
         model: "text-embedding-3-small",
         input: "what editor should i use?",
-        encoding_format: "float",
       });
       expect(result).toMatchObject({
         prependContext: expect.stringContaining("I prefer Helix for editing code."),
@@ -590,7 +630,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -616,7 +658,7 @@ describe("memory plugin e2e", () => {
         },
         runtime: {
           config: {
-            loadConfig: () => configFile,
+            current: () => configFile,
           },
         },
         logger: {
@@ -713,7 +755,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -739,7 +783,7 @@ describe("memory plugin e2e", () => {
         },
         runtime: {
           config: {
-            loadConfig: () => configFile,
+            current: () => configFile,
           },
         },
         logger: {
@@ -812,7 +856,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -873,7 +919,6 @@ describe("memory plugin e2e", () => {
       expect(embeddingsCreate).toHaveBeenCalledWith({
         model: "text-embedding-3-small",
         input: "I prefer Helix for editing code every day.",
-        encoding_format: "float",
       });
       expect(vectorSearch).toHaveBeenCalledTimes(1);
       expect(add).toHaveBeenCalledTimes(1);
@@ -938,7 +983,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -964,7 +1011,7 @@ describe("memory plugin e2e", () => {
         },
         runtime: {
           config: {
-            loadConfig: () => configFile,
+            current: () => configFile,
           },
         },
         logger: {
@@ -1015,7 +1062,6 @@ describe("memory plugin e2e", () => {
       expect(embeddingsCreate).toHaveBeenCalledWith({
         model: "text-embedding-3-small",
         input: "I prefer Helix for editing code every day.",
-        encoding_format: "float",
       });
       expect(add).toHaveBeenCalledWith([
         expect.objectContaining({
@@ -1074,7 +1120,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -1100,7 +1148,7 @@ describe("memory plugin e2e", () => {
         },
         runtime: {
           config: {
-            loadConfig: () => configFile,
+            current: () => configFile,
           },
         },
         logger: {
@@ -1199,7 +1247,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -1225,7 +1275,7 @@ describe("memory plugin e2e", () => {
         },
         runtime: {
           config: {
-            loadConfig: () => configFile,
+            current: () => configFile,
           },
         },
         logger: {
@@ -1271,6 +1321,231 @@ describe("memory plugin e2e", () => {
     }
   });
 
+  async function setupAutoCaptureCursorHarness(overrides?: {
+    embeddingsCreate?: ReturnType<typeof vi.fn>;
+    searchResults?: Array<Record<string, unknown>>;
+  }) {
+    const embeddingsCreate =
+      overrides?.embeddingsCreate ??
+      vi.fn(async () => ({
+        data: [{ embedding: [0.1, 0.2, 0.3] }],
+      }));
+    const ensureGlobalUndiciEnvProxyDispatcher = vi.fn();
+    const add = vi.fn(async () => undefined);
+    const toArray = vi.fn(async () => overrides?.searchResults ?? []);
+    const limit = vi.fn(() => ({ toArray }));
+    const vectorSearch = vi.fn(() => ({ limit }));
+    const openTable = vi.fn(async () => ({
+      vectorSearch,
+      countRows: vi.fn(async () => 0),
+      add,
+      delete: vi.fn(async () => undefined),
+    }));
+    const loadLanceDbModule = vi.fn(async () => ({
+      connect: vi.fn(async () => ({
+        tableNames: vi.fn(async () => ["memories"]),
+        openTable,
+      })),
+    }));
+
+    vi.resetModules();
+    vi.doMock("openclaw/plugin-sdk/runtime-env", () => ({
+      ensureGlobalUndiciEnvProxyDispatcher,
+    }));
+    vi.doMock("openai", () => ({
+      default: class MockOpenAI {
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
+      },
+    }));
+    vi.doMock("./lancedb-runtime.js", () => ({
+      loadLanceDbModule,
+    }));
+
+    const { default: dynamicMemoryPlugin } = await import("./index.js");
+    const on = vi.fn();
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+    const mockApi = {
+      id: "memory-lancedb",
+      name: "Memory (LanceDB)",
+      source: "test",
+      config: {},
+      pluginConfig: {
+        embedding: {
+          apiKey: OPENAI_API_KEY,
+          model: "text-embedding-3-small",
+        },
+        dbPath: getDbPath(),
+        autoCapture: true,
+        autoRecall: false,
+      },
+      runtime: {},
+      logger,
+      registerTool: vi.fn(),
+      registerCli: vi.fn(),
+      registerService: vi.fn(),
+      on,
+      resolvePath: (p: string) => p,
+    };
+
+    dynamicMemoryPlugin.register(mockApi as any);
+
+    const agentEnd = on.mock.calls.find(([hookName]) => hookName === "agent_end")?.[1];
+    const sessionEnd = on.mock.calls.find(([hookName]) => hookName === "session_end")?.[1];
+    expect(agentEnd).toBeTypeOf("function");
+    expect(sessionEnd).toBeTypeOf("function");
+
+    return {
+      add,
+      agentEnd,
+      embeddingsCreate,
+      ensureGlobalUndiciEnvProxyDispatcher,
+      loadLanceDbModule,
+      logger,
+      sessionEnd,
+    };
+  }
+
+  async function cleanupAutoCaptureCursorHarness() {
+    vi.doUnmock("openclaw/plugin-sdk/runtime-env");
+    vi.doUnmock("openai");
+    vi.doUnmock("./lancedb-runtime.js");
+    vi.resetModules();
+  }
+
+  test("skips already-processed auto-capture messages by session cursor", async () => {
+    const harness = await setupAutoCaptureCursorHarness();
+
+    try {
+      await harness.agentEnd?.(
+        {
+          success: true,
+          messages: [{ role: "user", content: "I prefer Helix for editing code every day." }],
+        },
+        { sessionKey: "session-a" },
+      );
+      await harness.agentEnd?.(
+        {
+          success: true,
+          messages: [
+            { role: "user", content: "I prefer Helix for editing code every day." },
+            { role: "user", content: "I prefer Fish for shell commands every day." },
+          ],
+        },
+        { sessionKey: "session-a" },
+      );
+
+      expect(harness.embeddingsCreate).toHaveBeenCalledTimes(2);
+      expect(harness.embeddingsCreate).toHaveBeenNthCalledWith(1, {
+        model: "text-embedding-3-small",
+        input: "I prefer Helix for editing code every day.",
+      });
+      expect(harness.embeddingsCreate).toHaveBeenNthCalledWith(2, {
+        model: "text-embedding-3-small",
+        input: "I prefer Fish for shell commands every day.",
+      });
+      expect(harness.add).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanupAutoCaptureCursorHarness();
+    }
+  });
+
+  test("does not advance auto-capture cursor when message processing fails", async () => {
+    const embeddingsCreate = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary embedding failure"))
+      .mockResolvedValueOnce({ data: [{ embedding: [0.1, 0.2, 0.3] }] });
+    const harness = await setupAutoCaptureCursorHarness({ embeddingsCreate });
+
+    try {
+      const event = {
+        success: true,
+        messages: [{ role: "user", content: "I prefer Helix for editing code every day." }],
+      };
+
+      await harness.agentEnd?.(event, { sessionKey: "session-failure" });
+      await harness.agentEnd?.(event, { sessionKey: "session-failure" });
+
+      expect(embeddingsCreate).toHaveBeenCalledTimes(2);
+      expect(harness.add).toHaveBeenCalledTimes(1);
+      expect(harness.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("memory-lancedb: capture failed:"),
+      );
+    } finally {
+      await cleanupAutoCaptureCursorHarness();
+    }
+  });
+
+  test("does not lose new auto-capture messages after history compaction rewrites prior turns", async () => {
+    const harness = await setupAutoCaptureCursorHarness();
+
+    try {
+      await harness.agentEnd?.(
+        {
+          success: true,
+          messages: [
+            { role: "user", content: "I prefer Helix for editing code every day." },
+            { role: "user", content: "I prefer Fish for shell commands every day." },
+          ],
+        },
+        { sessionKey: "session-compacted" },
+      );
+      await harness.agentEnd?.(
+        {
+          success: true,
+          messages: [
+            { role: "assistant", content: "Earlier history was compacted." },
+            { role: "user", content: "I prefer Deno for small scripts every day." },
+          ],
+        },
+        { sessionKey: "session-compacted" },
+      );
+
+      expect(harness.embeddingsCreate).toHaveBeenCalledTimes(3);
+      expect(harness.embeddingsCreate).toHaveBeenNthCalledWith(3, {
+        model: "text-embedding-3-small",
+        input: "I prefer Deno for small scripts every day.",
+      });
+      expect(harness.add).toHaveBeenCalledTimes(3);
+    } finally {
+      await cleanupAutoCaptureCursorHarness();
+    }
+  });
+
+  test("evicts auto-capture cursor state on session end", async () => {
+    const harness = await setupAutoCaptureCursorHarness();
+
+    try {
+      const event = {
+        success: true,
+        messages: [{ role: "user", content: "I prefer Helix for editing code every day." }],
+      };
+
+      await harness.agentEnd?.(event, { sessionKey: "session-ended" });
+      await harness.sessionEnd?.(
+        {
+          sessionId: "session-id",
+          sessionKey: "session-ended",
+          messageCount: 1,
+          reason: "deleted",
+        },
+        { sessionId: "session-id", sessionKey: "session-ended" },
+      );
+      await harness.agentEnd?.(event, { sessionKey: "session-ended" });
+
+      expect(harness.embeddingsCreate).toHaveBeenCalledTimes(2);
+      expect(harness.add).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanupAutoCaptureCursorHarness();
+    }
+  });
+
   test("passes configured dimensions to OpenAI embeddings API", async () => {
     const embeddingsCreate = vi.fn(async () => ({
       data: [{ embedding: [0.1, 0.2, 0.3] }],
@@ -1297,7 +1572,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -1353,7 +1630,6 @@ describe("memory plugin e2e", () => {
       expect(embeddingsCreate).toHaveBeenCalledWith({
         model: "text-embedding-3-small",
         input: "hello dimensions",
-        encoding_format: "float",
         dimensions: 1024,
       });
     } finally {
@@ -1393,7 +1669,9 @@ describe("memory plugin e2e", () => {
     }));
     vi.doMock("openai", () => ({
       default: class MockOpenAI {
-        embeddings = { create: embeddingsCreate };
+        post = vi.fn((_path: string, opts: { body?: unknown }) =>
+          invokeEmbeddingCreate(embeddingsCreate, opts.body),
+        );
       },
     }));
     vi.doMock("./lancedb-runtime.js", () => ({
@@ -1566,6 +1844,38 @@ describe("memory plugin e2e", () => {
     const customTooLong = `I always prefer this style. ${"x".repeat(1600)}`;
     expect(shouldCapture(customAllowed, { maxChars: 1500 })).toBe(true);
     expect(shouldCapture(customTooLong, { maxChars: 1500 })).toBe(false);
+  });
+
+  test("normalizeRecallQuery trims whitespace and bounds embedding input", async () => {
+    expect(normalizeRecallQuery("  remember   the   blue   mug  ", 100)).toBe(
+      "remember the blue mug",
+    );
+    expect(normalizeRecallQuery(`look up ${"x".repeat(200)}`, 120)).toHaveLength(120);
+  });
+
+  test("normalizeEmbeddingVector accepts float arrays and base64 float32 responses", async () => {
+    expect(normalizeEmbeddingVector([0.1, 0.2, 0.3])).toEqual([0.1, 0.2, 0.3]);
+
+    const bytes = Buffer.alloc(2 * Float32Array.BYTES_PER_ELEMENT);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    view.setFloat32(0, 1.25, true);
+    view.setFloat32(Float32Array.BYTES_PER_ELEMENT, -2.5, true);
+
+    const decoded = normalizeEmbeddingVector(bytes.toString("base64"));
+    expect(decoded[0]).toBeCloseTo(1.25);
+    expect(decoded[1]).toBeCloseTo(-2.5);
+  });
+
+  test("normalizeEmbeddingVector rejects malformed embedding payloads", async () => {
+    expect(() => normalizeEmbeddingVector([0.1, Number.NaN])).toThrow(
+      "Embedding response contains non-numeric values",
+    );
+    expect(() => normalizeEmbeddingVector("abc")).toThrow(
+      "Base64 embedding response has invalid byte length",
+    );
+    expect(() => normalizeEmbeddingVector(undefined)).toThrow(
+      "Embedding response is missing a vector",
+    );
   });
 
   test("formatRelevantMemoriesContext escapes memory text and marks entries as untrusted", async () => {

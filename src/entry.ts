@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { enableCompileCache } from "node:module";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { isRootHelpInvocation } from "./cli/argv.js";
 import { parseCliContainerArgs, resolveCliContainerTarget } from "./cli/container-target.js";
 import { applyCliProfileEnv, parseCliProfileArgs } from "./cli/profile.js";
 import { normalizeWindowsArgv } from "./cli/windows-argv.js";
+import {
+  enableOpenClawCompileCache,
+  resolveEntryInstallRoot,
+  respawnWithoutOpenClawCompileCacheIfNeeded,
+} from "./entry.compile-cache.js";
 import { buildCliRespawnPlan } from "./entry.respawn.js";
 import { tryHandleRootVersionFastPath } from "./entry.version-fast-path.js";
-import { isTruthyEnvValue, normalizeEnv } from "./infra/env.js";
+import { normalizeEnv } from "./infra/env.js";
 import { isMainModule } from "./infra/is-main.js";
 import { ensureOpenClawExecMarkerOnProcess } from "./infra/openclaw-exec-env.js";
 import { installProcessWarningFilter } from "./infra/warning-filter.js";
@@ -43,17 +47,19 @@ if (
 ) {
   // Imported as a dependency — skip all entry-point side effects.
 } else {
+  const entryFile = fileURLToPath(import.meta.url);
+  const installRoot = resolveEntryInstallRoot(entryFile);
+  respawnWithoutOpenClawCompileCacheIfNeeded({
+    currentFile: entryFile,
+    installRoot,
+  });
   process.title = "openclaw";
   ensureOpenClawExecMarkerOnProcess();
   installProcessWarningFilter();
   normalizeEnv();
-  if (!isTruthyEnvValue(process.env.NODE_DISABLE_COMPILE_CACHE)) {
-    try {
-      enableCompileCache();
-    } catch {
-      // Best-effort only; never block startup.
-    }
-  }
+  enableOpenClawCompileCache({
+    installRoot,
+  });
 
   if (shouldForceReadOnlyAuthStore(process.argv)) {
     process.env.OPENCLAW_AUTH_STORE_READONLY = "1";
@@ -134,6 +140,7 @@ if (
 export async function tryHandleRootHelpFastPath(
   argv: string[],
   deps: {
+    outputPrecomputedRootHelpText?: () => boolean;
     outputRootHelp?: () => void | Promise<void>;
     onError?: (error: unknown) => void;
     env?: NodeJS.ProcessEnv;
@@ -159,7 +166,9 @@ export async function tryHandleRootHelpFastPath(
       await deps.outputRootHelp();
       return true;
     }
-    const { outputPrecomputedRootHelpText } = await import("./cli/root-help-metadata.js");
+    const outputPrecomputedRootHelpText =
+      deps.outputPrecomputedRootHelpText ??
+      (await import("./cli/root-help-metadata.js")).outputPrecomputedRootHelpText;
     if (!outputPrecomputedRootHelpText()) {
       const { outputRootHelp } = await import("./cli/program/root-help.js");
       await outputRootHelp();

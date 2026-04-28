@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 
 const PACKAGE_ACCEPTANCE_WORKFLOW = ".github/workflows/package-acceptance.yml";
 const LIVE_E2E_WORKFLOW = ".github/workflows/openclaw-live-and-e2e-checks-reusable.yml";
-const DOCKER_E2E_PLAN_ACTION = ".github/actions/docker-e2e-plan/action.yml";
 const NPM_TELEGRAM_WORKFLOW = ".github/workflows/npm-telegram-beta-e2e.yml";
 const RELEASE_CHECKS_WORKFLOW = ".github/workflows/openclaw-release-checks.yml";
+const FULL_RELEASE_VALIDATION_WORKFLOW = ".github/workflows/full-release-validation.yml";
 
 describe("package acceptance workflow", () => {
   it("resolves candidate package sources before reusing Docker E2E lanes", () => {
@@ -48,8 +48,13 @@ describe("package acceptance workflow", () => {
     expect(workflow).toContain(
       "package_artifact_name: ${{ needs.resolve_package.outputs.package_artifact_name }}",
     );
+    expect(workflow).toContain("telegram_scenarios:");
+    expect(workflow).toContain("scenario: ${{ inputs.telegram_scenarios }}");
     expect(workflow).toContain(
       "package_label: openclaw@${{ needs.resolve_package.outputs.package_version }}",
+    );
+    expect(workflow).toContain(
+      "harness_ref: ${{ inputs.source == 'ref' && inputs.package_ref || inputs.workflow_ref }}",
     );
   });
 });
@@ -57,7 +62,6 @@ describe("package acceptance workflow", () => {
 describe("package artifact reuse", () => {
   it("lets reusable Docker E2E consume an already resolved package artifact", () => {
     const workflow = readFileSync(LIVE_E2E_WORKFLOW, "utf8");
-    const action = readFileSync(DOCKER_E2E_PLAN_ACTION, "utf8");
 
     expect(workflow).toContain("package_artifact_name:");
     expect(workflow).toContain("package_artifact_run_id:");
@@ -73,11 +77,14 @@ describe("package artifact reuse", () => {
     expect(workflow).toContain(
       'functional_image="${PROVIDED_FUNCTIONAL_IMAGE:-ghcr.io/${repository}-docker-e2e-functional:${image_tag}}"',
     );
-    expect(workflow).toContain(
-      "package-artifact-name: ${{ inputs.package_artifact_name || 'docker-e2e-package' }}",
-    );
-    expect(action).toContain("package-artifact-name:");
-    expect(action).toContain("name: ${{ inputs.package-artifact-name }}");
+    expect(workflow).toContain("name: ${{ inputs.package_artifact_name || 'docker-e2e-package' }}");
+    expect(workflow).not.toContain("uses: ./.github/actions/docker-e2e-plan");
+    expect(workflow).toContain("node scripts/test-docker-all.mjs --plan-json");
+    expect(workflow).toContain("node scripts/docker-e2e.mjs github-outputs");
+    expect(workflow).toContain("plan_docker_lane_groups:");
+    expect(workflow).toContain("Docker E2E targeted lanes (${{ matrix.group.label }})");
+    expect(workflow).toContain("DOCKER_E2E_LANES: ${{ matrix.group.docker_lanes }}");
+    expect(workflow).toContain("name: docker-e2e-${{ steps.plan.outputs.artifact_suffix }}");
   });
 
   it("uses Blacksmith Docker build caching for prepared E2E images", () => {
@@ -89,12 +96,42 @@ describe("package artifact reuse", () => {
     expect(workflow).not.toContain("cache-to: type=gha,mode=max,scope=docker-e2e");
   });
 
+  it("shards broad native live tests instead of one serial live-all job", () => {
+    const workflow = readFileSync(LIVE_E2E_WORKFLOW, "utf8");
+
+    expect(workflow).not.toContain("suite_id: live-all");
+    expect(workflow).not.toContain("command: pnpm test:live\n");
+    expect(workflow).toContain("suite_id: native-live-src-agents");
+    expect(workflow).toContain("command: node scripts/test-live-shard.mjs native-live-src-agents");
+    expect(workflow).toContain("suite_id: native-live-src-gateway-core");
+    expect(workflow).toContain("suite_id: native-live-src-gateway-backends");
+    expect(workflow).toContain("suite_id: native-live-src-gateway-profiles-deepseek");
+    expect(workflow).toContain("suite_id: native-live-src-gateway-profiles-opencode-go");
+    expect(workflow).toContain("suite_id: native-live-src-gateway-profiles-openrouter");
+    expect(workflow).toContain("suite_id: native-live-src-gateway-profiles-xai");
+    expect(workflow).toContain("suite_id: native-live-src-gateway-profiles-zai");
+    expect(workflow).not.toContain(
+      "OPENCLAW_LIVE_GATEWAY_PROVIDERS=deepseek,opencode-go,openrouter,xai,zai",
+    );
+    expect(workflow).toContain("suite_id: native-live-extensions-a-k");
+    expect(workflow).toContain("suite_id: native-live-extensions-l-n");
+    expect(workflow).toContain("suite_id: native-live-extensions-openai");
+    expect(workflow).toContain("suite_id: native-live-extensions-o-z");
+    expect(workflow).toContain("suite_id: native-live-extensions-media");
+    expect(workflow).toMatch(
+      /suite_id: native-live-extensions-media-audio[\s\S]*?needs_ffmpeg: true/u,
+    );
+    expect(workflow).toContain("if: matrix.needs_ffmpeg");
+  });
+
   it("allows the Telegram lane to run from reusable package acceptance artifacts", () => {
     const workflow = readFileSync(NPM_TELEGRAM_WORKFLOW, "utf8");
 
     expect(workflow).toContain("workflow_call:");
     expect(workflow).toContain("package_artifact_name:");
     expect(workflow).toContain("Download package-under-test artifact");
+    expect(workflow).toContain("harness_ref:");
+    expect(workflow).toContain("ref: ${{ inputs.harness_ref || github.sha }}");
     expect(workflow).toContain("OPENCLAW_NPM_TELEGRAM_PACKAGE_TGZ");
     expect(workflow).toContain("provider_mode:");
     expect(workflow).toContain("provider_mode must be mock-openai or live-frontier");
@@ -106,12 +143,16 @@ describe("package artifact reuse", () => {
 
     expect(workflow).toContain("package_acceptance_release_checks:");
     expect(workflow).toContain(
-      "live_and_e2e_release_checks:\n    needs: [resolve_target]\n    permissions:\n      actions: read",
+      'live_and_e2e_release_checks:\n    needs: [resolve_target]\n    if: contains(fromJSON(\'["all","live-e2e"]\'), needs.resolve_target.outputs.rerun_group)',
     );
     expect(workflow).toContain("uses: ./.github/workflows/package-acceptance.yml");
     expect(workflow).toContain("package_ref: ${{ needs.resolve_target.outputs.ref }}");
-    expect(workflow).toContain("suite_profile: package");
+    expect(workflow).toContain("suite_profile: custom");
+    expect(workflow).toContain("docker_lanes: bundled-channel-deps-compat plugins-offline");
     expect(workflow).toContain("telegram_mode: mock-openai");
+    expect(workflow).toContain(
+      "telegram_scenarios: telegram-help-command,telegram-commands-command,telegram-tools-compact-command,telegram-whoami-command,telegram-context-command,telegram-mention-gating",
+    );
     expect(workflow).toContain("ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}");
     expect(workflow).toContain("ANTHROPIC_API_TOKEN: ${{ secrets.ANTHROPIC_API_TOKEN }}");
     expect(workflow).toContain(
@@ -119,6 +160,24 @@ describe("package artifact reuse", () => {
     );
     expect(workflow).toContain(
       "OPENCLAW_QA_CONVEX_SECRET_CI: ${{ secrets.OPENCLAW_QA_CONVEX_SECRET_CI }}",
+    );
+    expect(workflow).toContain("rerun_group:");
+    expect(workflow).toContain("- live-e2e");
+    expect(workflow).toContain("- qa-live");
+  });
+
+  it("detects Matrix fail-fast support for older release refs", () => {
+    const releaseWorkflow = readFileSync(RELEASE_CHECKS_WORKFLOW, "utf8");
+    const qaWorkflow = readFileSync(".github/workflows/qa-live-transports-convex.yml", "utf8");
+
+    expect(releaseWorkflow).toContain("matrix_args=(");
+    expect(releaseWorkflow).toContain(
+      'pnpm openclaw qa matrix --help 2>/dev/null | grep -F -q -- "--fail-fast"',
+    );
+    expect(releaseWorkflow).toContain("matrix_args+=(--fail-fast)");
+    expect(releaseWorkflow).toContain('pnpm openclaw qa matrix "${matrix_args[@]}"');
+    expect(qaWorkflow).toContain(
+      'pnpm openclaw qa matrix --help 2>/dev/null | grep -F -q -- "--fail-fast"',
     );
   });
 
@@ -130,5 +189,21 @@ describe("package artifact reuse", () => {
     expect(workflow).toContain("PACKAGE_TELEGRAM_RESULT:");
     expect(workflow).toContain("package_telegram=${PACKAGE_TELEGRAM_RESULT}");
     expect(workflow).not.toContain("npm_telegram:");
+  });
+
+  it("runs full release children from the trusted workflow ref", () => {
+    const workflow = readFileSync(FULL_RELEASE_VALIDATION_WORKFLOW, "utf8");
+
+    expect(workflow).toContain("CHILD_WORKFLOW_REF: ${{ github.ref_name }}");
+    expect(workflow).toContain('gh workflow run "$workflow" --ref "$CHILD_WORKFLOW_REF" "$@"');
+    expect(workflow).toContain(
+      'gh workflow run npm-telegram-beta-e2e.yml --ref "$CHILD_WORKFLOW_REF" "${args[@]}"',
+    );
+    expect(workflow).toContain('-f harness_ref="$TARGET_SHA"');
+    expect(workflow).toContain("child_rerun_group=all");
+    expect(workflow).toContain('-f rerun_group="$child_rerun_group"');
+    expect(workflow).toContain("NORMAL_CI_RESULT: ${{ needs.normal_ci.result }}");
+    expect(workflow).not.toContain("workflow_ref:");
+    expect(workflow).not.toContain("inputs.workflow_ref");
   });
 });

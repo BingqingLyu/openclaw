@@ -52,6 +52,49 @@ export const PLUGIN_COMPAT_RECORDS = [
     ],
   },
   {
+    code: "channel-route-key-aliases",
+    status: "deprecated",
+    owner: "sdk",
+    introduced: "2026-04-28",
+    deprecated: "2026-04-28",
+    warningStarts: "2026-04-28",
+    removeAfter: "2026-07-28",
+    replacement: "`channelRouteDedupeKey` and `channelRouteCompactKey`",
+    docsPath: "/plugins/sdk-migration",
+    surfaces: [
+      "openclaw/plugin-sdk/channel-route channelRouteIdentityKey",
+      "openclaw/plugin-sdk/channel-route channelRouteKey",
+    ],
+    diagnostics: ["plugin SDK compatibility warning"],
+    tests: [
+      "src/plugin-sdk/channel-route.test.ts",
+      "src/plugins/contracts/plugin-sdk-subpaths.test.ts",
+    ],
+  },
+  {
+    code: "channel-target-comparable-aliases",
+    status: "deprecated",
+    owner: "sdk",
+    introduced: "2026-04-28",
+    deprecated: "2026-04-28",
+    warningStarts: "2026-04-28",
+    removeAfter: "2026-07-28",
+    replacement:
+      "`resolveRouteTargetForChannel`, `ChannelRouteParsedTarget`, `channelRouteTargetsMatchExact`, and `channelRouteTargetsShareConversation`",
+    docsPath: "/plugins/sdk-migration",
+    surfaces: [
+      "src/channels/plugins/target-parsing ComparableChannelTarget",
+      "src/channels/plugins/target-parsing resolveComparableTargetForChannel",
+      "src/channels/plugins/target-parsing comparableChannelTargetsMatch",
+      "src/channels/plugins/target-parsing comparableChannelTargetsShareRoute",
+    ],
+    diagnostics: ["plugin SDK compatibility warning"],
+    tests: [
+      "src/channels/plugins/target-parsing.test.ts",
+      "src/plugins/contracts/plugin-sdk-subpaths.test.ts",
+    ],
+  },
+  {
     code: "bundled-plugin-allowlist",
     status: "active",
     owner: "config",
@@ -170,6 +213,17 @@ export const PLUGIN_COMPAT_RECORDS = [
     surfaces: ["activation.onRoutes", "activation planner"],
     diagnostics: ["activation plan compat reason"],
     tests: ["src/plugins/activation-planner.test.ts"],
+  },
+  {
+    code: "activation-config-path-hint",
+    status: "active",
+    owner: "plugin-execution",
+    introduced: "2026-04-27",
+    replacement: "manifest contribution ownership for root config surfaces",
+    docsPath: "/plugins/manifest",
+    surfaces: ["activation.onConfigPaths", "startup plugin selection"],
+    diagnostics: ["activation plan compat reason"],
+    tests: ["src/plugins/channel-plugin-ids.test.ts"],
   },
   {
     code: "activation-capability-hint",
@@ -581,6 +635,29 @@ export const PLUGIN_COMPAT_RECORDS = [
     tests: [
       "src/plugins/captured-registration.test.ts",
       "src/agents/codex-app-server.extensions.test.ts",
+    ],
+  },
+  {
+    code: "runtime-config-load-write",
+    status: "deprecated",
+    owner: "sdk",
+    introduced: "2026-04-27",
+    deprecated: "2026-04-27",
+    warningStarts: "2026-04-27",
+    removeAfter: "2026-07-27",
+    replacement:
+      "`api.runtime.config.current()`, passed config values, `mutateConfigFile(...)`, or `replaceConfigFile(...)`",
+    docsPath: "/plugins/sdk-runtime#config-loading-and-writes",
+    surfaces: ["api.runtime.config.loadConfig", "api.runtime.config.writeConfigFile"],
+    diagnostics: [
+      "plugin runtime compatibility warning",
+      "deprecated internal config API guard",
+      "runtime channel config boundary guard",
+    ],
+    tests: [
+      "src/plugins/runtime/runtime-config.test.ts",
+      "src/plugins/contracts/deprecated-internal-config-api.test.ts",
+      "src/plugins/contracts/config-boundary-guard.test.ts",
     ],
   },
   {

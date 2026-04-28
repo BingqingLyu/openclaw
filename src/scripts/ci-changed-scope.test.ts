@@ -247,6 +247,33 @@ describe("detectChangedScope", () => {
       runChangedSmoke: false,
       runControlUiI18n: false,
     });
+    expect(detectChangedScope(["src/shared/runtime-import.ts"])).toEqual({
+      runNode: true,
+      runMacos: false,
+      runAndroid: false,
+      runWindows: true,
+      runSkillsPython: false,
+      runChangedSmoke: false,
+      runControlUiI18n: false,
+    });
+    expect(detectChangedScope(["src/shared/runtime-import.test.ts"])).toEqual({
+      runNode: true,
+      runMacos: false,
+      runAndroid: false,
+      runWindows: true,
+      runSkillsPython: false,
+      runChangedSmoke: false,
+      runControlUiI18n: false,
+    });
+    expect(detectChangedScope(["src/plugins/import-specifier.test.ts"])).toEqual({
+      runNode: true,
+      runMacos: false,
+      runAndroid: false,
+      runWindows: true,
+      runSkillsPython: false,
+      runChangedSmoke: false,
+      runControlUiI18n: false,
+    });
     expect(detectChangedScope(["scripts/npm-runner.mjs"])).toEqual({
       runNode: true,
       runMacos: false,
@@ -500,7 +527,7 @@ describe("detectChangedScope", () => {
       detectNodeFastScope([
         bundledCapabilityMetadataPath,
         "src/plugins/contracts/registry.ts",
-        "test/helpers/plugins/tts-contract-suites.ts",
+        "src/plugins/contracts/tts-contract-suites.ts",
         "scripts/test-projects.test-support.mjs",
         "test/scripts/test-projects.test.ts",
       ]),

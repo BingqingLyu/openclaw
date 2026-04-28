@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import path from "node:path";
+import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import { deriveSessionTotalTokens, hasNonzeroUsage, normalizeUsage } from "../agents/usage.js";
 import { jsonUtf8Bytes } from "../infra/json-utf8-bytes.js";
 import { hasInterSessionUserProvenance } from "../sessions/input-provenance.js";
@@ -12,6 +14,8 @@ import {
   archiveFileOnDisk,
   archiveSessionTranscripts,
   cleanupArchivedSessionTranscripts,
+  classifySessionTranscriptCandidate,
+  findLatestResetArchive,
 } from "./session-transcript-files.fs.js";
 import type { SessionPreviewItem } from "./session-utils.types.js";
 
@@ -97,12 +101,80 @@ export function readSessionMessages(
 ): unknown[] {
   const candidates = resolveSessionTranscriptCandidates(sessionId, storePath, sessionFile);
 
-  const filePath = candidates.find((p) => fs.existsSync(p));
+  let filePath = candidates.find((p) => fs.existsSync(p));
+  // Fall back to the most recent reset archive when no primary transcript exists.
+  // This ensures chat.history returns content after a daily or manual session reset
+  // rather than an empty response (related: #42336, #56131, #57139).
+  // Derive search dirs from the same candidate paths so archive lookup mirrors
+  // primary transcript resolution (including legacy ~/.openclaw/sessions).
+  if (!filePath && sessionId) {
+    const searchDirs = Array.from(new Set(candidates.map((c) => path.dirname(c))));
+    // Exclude stale candidates (paths whose embedded session ID belongs to a different session)
+    // to prevent returning another session's archived messages.
+    const candidateBasenames = candidates
+      .filter((c) => classifySessionTranscriptCandidate(sessionId, c) !== "stale")
+      .map((c) => path.basename(c));
+    filePath = findLatestResetArchive(sessionId, searchDirs, candidateBasenames);
+  }
   if (!filePath) {
     return [];
   }
 
   const lines = fs.readFileSync(filePath, "utf-8").split(/\r?\n/);
+  const hasTreeEntries = lines.some((line) => {
+    if (!line.trim()) {
+      return false;
+    }
+    try {
+      const parsed = JSON.parse(line) as { type?: unknown; id?: unknown; parentId?: unknown };
+      return parsed.type !== "session" && typeof parsed.id === "string" && "parentId" in parsed;
+    } catch {
+      return false;
+    }
+  });
+  let branchEntries: SessionEntry[] | null = null;
+  if (hasTreeEntries) {
+    try {
+      branchEntries = SessionManager.open(filePath).getBranch();
+    } catch {
+      branchEntries = null;
+    }
+  }
+
+  if (branchEntries) {
+    const messages: unknown[] = [];
+    let messageSeq = 0;
+    for (const entry of branchEntries) {
+      if (entry.type === "message" && entry.message) {
+        messageSeq += 1;
+        messages.push(
+          attachOpenClawTranscriptMeta(entry.message, {
+            ...(typeof entry.id === "string" ? { id: entry.id } : {}),
+            seq: messageSeq,
+          }),
+        );
+        continue;
+      }
+
+      if (entry.type === "compaction") {
+        const ts = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+        const timestamp = Number.isFinite(ts) ? ts : Date.now();
+        messageSeq += 1;
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "Compaction" }],
+          timestamp,
+          __openclaw: {
+            kind: "compaction",
+            id: typeof entry.id === "string" ? entry.id : undefined,
+            seq: messageSeq,
+          },
+        });
+      }
+    }
+    return messages;
+  }
+
   const messages: unknown[] = [];
   let messageSeq = 0;
   for (const line of lines) {
@@ -187,7 +259,19 @@ export function readSessionTitleFieldsFromTranscript(
   opts?: { includeInterSession?: boolean },
 ): SessionTitleFields {
   const candidates = resolveSessionTranscriptCandidates(sessionId, storePath, sessionFile, agentId);
-  const filePath = candidates.find((p) => fs.existsSync(p));
+  let filePath = candidates.find((p) => fs.existsSync(p));
+  // Fall back to the most recent reset archive when no primary transcript exists,
+  // mirroring readSessionMessages so derivedTitle (firstUserMessage) and
+  // lastMessagePreview survive a daily or manual session reset. Without this,
+  // listSessionsFromStore falls through to formatSessionIdPrefix and the UI
+  // shows a raw sessionId instead of the human-readable first user message.
+  if (!filePath && sessionId) {
+    const searchDirs = Array.from(new Set(candidates.map((c) => path.dirname(c))));
+    const candidateBasenames = candidates
+      .filter((c) => classifySessionTranscriptCandidate(sessionId, c) !== "stale")
+      .map((c) => path.basename(c));
+    filePath = findLatestResetArchive(sessionId, searchDirs, candidateBasenames);
+  }
   if (!filePath) {
     return { firstUserMessage: null, lastMessagePreview: null };
   }
