@@ -495,10 +495,12 @@
   resize: none;
   white-space: pre-wrap;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.45;
 }
 
+/* iOS Safari zoom prevention: inputs < 16px trigger auto-zoom on focus */
+/* stylelint-disable-next-line declaration-property-allowed-list */
 .chat-compose__field textarea:disabled {
   opacity: 0.7;
   cursor: not-allowed;
@@ -558,13 +560,14 @@
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 16px;
   font-family: inherit;
   line-height: 1.4;
   outline: none;
   box-sizing: border-box;
 }
 
+/* iOS Safari zoom prevention: inputs < 16px trigger auto-zoom on focus */
 .agent-chat__input > textarea:focus-visible {
   box-shadow: none;
 }

@@ -891,6 +891,8 @@
   transition:
     border-color var(--duration-fast) ease,
     box-shadow var(--duration-fast) ease;
+  /* iOS Safari: inputs < 16px trigger auto-zoom on focus */
+  font-size: 16px;
 }
 
 .field input:focus,
