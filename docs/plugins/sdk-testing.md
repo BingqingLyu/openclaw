@@ -38,6 +38,17 @@ import {
 | `installCommonResolveTargetErrorCases` | Shared test cases for target resolution error handling |
 | `shouldAckReaction`                    | Check whether a channel should add an ack reaction     |
 | `removeAckReactionAfterReply`          | Remove ack reaction after reply delivery               |
+| `createTestRegistry`                   | Build a channel plugin registry fixture                |
+| `createEmptyPluginRegistry`            | Build an empty plugin registry fixture                 |
+| `setActivePluginRegistry`              | Install a registry fixture for plugin runtime tests    |
+| `createRequestCaptureJsonFetch`        | Capture JSON fetch requests in media helper tests      |
+| `withFetchPreconnect`                  | Run fetch tests with preconnect hooks installed        |
+| `withEnv` / `withEnvAsync`             | Temporarily patch environment variables                |
+| `createTempHomeEnv` / `withTempDir`    | Create isolated filesystem test fixtures               |
+| `createMockServerResponse`             | Create a minimal HTTP server response mock             |
+| `registerSingleProviderPlugin`         | Register one provider plugin in loader smoke tests     |
+| `createRuntimeTaskFlow`                | Create isolated runtime task-flow state                |
+| `typedCases`                           | Preserve literal types for table-driven tests          |
 
 ### Types
 
@@ -93,6 +104,14 @@ plugin calls a capability API it does not own. For example,
 `api.registerHook(...)` requires a hook name, and
 `api.registerMemoryCapability(...)` requires the plugin manifest or exported
 entry to declare `kind: "memory"`.
+
+### Testing runtime config access
+
+Prefer the shared plugin runtime mock from the repo test helpers when testing
+bundled plugins. Its deprecated `runtime.config.loadConfig()` and
+`runtime.config.writeConfigFile(...)` mocks throw by default so tests catch new
+usage of compatibility APIs. Override those mocks only when the test is
+explicitly covering legacy compatibility behavior.
 
 ### Unit testing a channel plugin
 
@@ -178,8 +197,9 @@ const mockRuntime = {
     // ... other mocks
   },
   config: {
-    loadConfig: vi.fn(),
-    writeConfigFile: vi.fn(),
+    current: vi.fn(() => ({}) as const),
+    mutateConfigFile: vi.fn(),
+    replaceConfigFile: vi.fn(),
   },
   // ... other namespaces
 } as unknown as PluginRuntime;
