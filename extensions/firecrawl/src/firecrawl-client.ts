@@ -8,6 +8,7 @@ import {
   resolveCacheTtlMs,
   truncateText,
   withStrictWebToolsEndpoint,
+  withTrustedWebToolsEndpoint,
   writeCache,
 } from "openclaw/plugin-sdk/provider-web-fetch";
 import { normalizeSecretInput } from "openclaw/plugin-sdk/secret-input";
@@ -31,7 +32,52 @@ const SCRAPE_CACHE = new Map<
 >();
 const DEFAULT_SEARCH_COUNT = 5;
 const DEFAULT_SCRAPE_MAX_CHARS = 50_000;
-const ALLOWED_FIRECRAWL_HOSTS = new Set(["api.firecrawl.dev"]);
+
+/**
+ * Returns true when the hostname looks like a private/local network address
+ * where cleartext HTTP is acceptable (loopback, RFC 1918 IPs, mDNS .local,
+ * .internal, .localhost suffixes).
+ */
+function isPrivateOrLocalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]") {
+    return true;
+  }
+  // IPv6 unique-local (fc00::/7) and link-local (fe80::/10) — bare or bracketed
+  const bare = h.startsWith("[") && h.endsWith("]") ? h.slice(1, -1) : h;
+  if (/^f[cd][0-9a-f]{2}:/i.test(bare) || /^fe[89ab][0-9a-f]:/i.test(bare)) {
+    return true;
+  }
+  if (h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) {
+    return true;
+  }
+  // RFC 1918 / link-local / carrier-grade NAT / loopback IPv4 ranges
+  const ipv4Match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (ipv4Match) {
+    const [, a, b] = ipv4Match.map(Number);
+    // 127.0.0.0/8 (full loopback subnet)
+    if (a === 127) {
+      return true;
+    }
+    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10
+    if (a === 10) {
+      return true;
+    }
+    if (a === 172 && b >= 16 && b <= 31) {
+      return true;
+    }
+    if (a === 192 && b === 168) {
+      return true;
+    }
+    if (a === 169 && b === 254) {
+      return true;
+    }
+    if (a === 100 && b >= 64 && b <= 127) {
+      return true;
+    }
+  }
+  return false;
+}
 
 type FirecrawlSearchItem = {
   title: string;
@@ -66,11 +112,13 @@ export type FirecrawlScrapeParams = {
 
 function resolveEndpoint(baseUrl: string, pathname: "/v2/search" | "/v2/scrape"): string {
   const url = new URL(baseUrl.trim() || "https://api.firecrawl.dev");
-  if (url.protocol !== "https:") {
-    throw new Error("Firecrawl baseUrl must use https.");
+  if (url.protocol !== "https:" && !isPrivateOrLocalHost(url.hostname)) {
+    throw new Error(
+      "Firecrawl baseUrl must use https for public hosts. Use https, or use a private/local network address with http.",
+    );
   }
-  if (!ALLOWED_FIRECRAWL_HOSTS.has(url.hostname)) {
-    throw new Error(`Firecrawl baseUrl host is not allowed: ${url.hostname}`);
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("Firecrawl baseUrl must use http or https.");
   }
   url.username = "";
   url.password = "";
@@ -78,6 +126,14 @@ function resolveEndpoint(baseUrl: string, pathname: "/v2/search" | "/v2/scrape")
   url.hash = "";
   url.pathname = pathname;
   return url.toString();
+}
+
+function isPrivateOrLocalEndpoint(url: string): boolean {
+  try {
+    return isPrivateOrLocalHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
 }
 
 async function postFirecrawlJson<T>(
@@ -91,7 +147,13 @@ async function postFirecrawlJson<T>(
   parse: (response: Response) => Promise<T>,
 ): Promise<T> {
   const apiKey = normalizeSecretInput(params.apiKey);
-  return await withStrictWebToolsEndpoint(
+  // Admin-configured private/local Firecrawl baseUrl (loopback, RFC 1918, mDNS,
+  // IPv6 ULA/link-local) goes through the trusted fetch guard so the strict
+  // SSRF policy does not block the outbound request to the configured host.
+  const guardedFetch = isPrivateOrLocalEndpoint(params.url)
+    ? withTrustedWebToolsEndpoint
+    : withStrictWebToolsEndpoint;
+  return await guardedFetch(
     {
       url: params.url,
       timeoutSeconds: params.timeoutSeconds,
@@ -496,6 +558,7 @@ export async function runFirecrawlScrape(
 }
 
 export const __testing = {
+  isPrivateOrLocalEndpoint,
   parseFirecrawlScrapePayload,
   postFirecrawlJson,
   resolveEndpoint,
