@@ -38,6 +38,12 @@ import type { CronServiceState } from "./state.js";
 const STUCK_RUN_MS = 2 * 60 * 60 * 1000;
 const STAGGER_OFFSET_CACHE_MAX = 4096;
 const staggerOffsetCache = new Map<string, number>();
+/**
+ * Minimum gap between consecutive fires of the same cron job. This prevents
+ * spin-loops when schedule computation lands in the same second as the just
+ * completed run.
+ */
+export const MIN_CRON_REFIRE_GAP_MS = 2_000;
 export const DEFAULT_ERROR_BACKOFF_SCHEDULE_MS = [
   30_000,
   60_000,
@@ -438,10 +444,27 @@ function walkSchedulableJobs(
   return changed;
 }
 
-function recomputeJobNextRunAtMs(params: { state: CronServiceState; job: CronJob; nowMs: number }) {
+function recomputeJobNextRunAtMs(params: {
+  state: CronServiceState;
+  job: CronJob;
+  nowMs: number;
+  suppressScheduleComputeError?: boolean;
+  recordedScheduleComputeErrorJobIds?: Set<string>;
+}) {
   let changed = false;
   try {
     let newNext = computeJobNextRunAtMs(params.job, params.nowMs);
+    if (params.job.schedule.kind === "cron" && newNext === undefined) {
+      if (params.suppressScheduleComputeError) {
+        return changed;
+      }
+      params.recordedScheduleComputeErrorJobIds?.add(params.job.id);
+      return recordScheduleComputeError({
+        state: params.state,
+        job: params.job,
+        err: new Error("schedule computation returned undefined"),
+      });
+    }
     if (
       params.job.schedule.kind !== "at" &&
       params.job.state.lastStatus === "error" &&
@@ -462,6 +485,9 @@ function recomputeJobNextRunAtMs(params: { state: CronServiceState; job: CronJob
         newNext = Math.max(newNext, backoffFloor);
       }
     }
+    if (params.job.schedule.kind === "cron" && newNext !== undefined) {
+      newNext = Math.max(newNext, params.nowMs + MIN_CRON_REFIRE_GAP_MS);
+    }
     if (params.job.state.nextRunAtMs !== newNext) {
       params.job.state.nextRunAtMs = newNext;
       changed = true;
@@ -472,6 +498,10 @@ function recomputeJobNextRunAtMs(params: { state: CronServiceState; job: CronJob
       changed = true;
     }
   } catch (err) {
+    if (params.suppressScheduleComputeError) {
+      return changed;
+    }
+    params.recordedScheduleComputeErrorJobIds?.add(params.job.id);
     if (recordScheduleComputeError({ state: params.state, job: params.job, err })) {
       changed = true;
     }
@@ -479,7 +509,13 @@ function recomputeJobNextRunAtMs(params: { state: CronServiceState; job: CronJob
   return changed;
 }
 
-export function recomputeNextRuns(state: CronServiceState): boolean {
+export function recomputeNextRuns(
+  state: CronServiceState,
+  opts?: {
+    suppressScheduleComputeErrorJobIds?: ReadonlySet<string>;
+    recordedScheduleComputeErrorJobIds?: Set<string>;
+  },
+): boolean {
   return walkSchedulableJobs(state, ({ job, nowMs: now }) => {
     let changed = false;
     // Only recompute if nextRunAtMs is missing or already past-due.
@@ -488,7 +524,16 @@ export function recomputeNextRuns(state: CronServiceState): boolean {
     const nextRun = job.state.nextRunAtMs;
     const isDueOrMissing = !hasScheduledNextRunAtMs(nextRun) || now >= nextRun;
     if (isDueOrMissing) {
-      if (recomputeJobNextRunAtMs({ state, job, nowMs: now })) {
+      if (
+        recomputeJobNextRunAtMs({
+          state,
+          job,
+          nowMs: now,
+          suppressScheduleComputeError:
+            opts?.suppressScheduleComputeErrorJobIds?.has(job.id) ?? false,
+          recordedScheduleComputeErrorJobIds: opts?.recordedScheduleComputeErrorJobIds,
+        })
+      ) {
         changed = true;
       }
     }
@@ -505,7 +550,12 @@ export function recomputeNextRuns(state: CronServiceState): boolean {
  */
 export function recomputeNextRunsForMaintenance(
   state: CronServiceState,
-  opts?: { recomputeExpired?: boolean; nowMs?: number },
+  opts?: {
+    recomputeExpired?: boolean;
+    nowMs?: number;
+    suppressScheduleComputeErrorJobIds?: ReadonlySet<string>;
+    recordedScheduleComputeErrorJobIds?: Set<string>;
+  },
 ): boolean {
   const recomputeExpired = opts?.recomputeExpired ?? false;
   return walkSchedulableJobs(
@@ -513,7 +563,16 @@ export function recomputeNextRunsForMaintenance(
     ({ job, nowMs: now }) => {
       let changed = false;
       if (!hasScheduledNextRunAtMs(job.state.nextRunAtMs)) {
-        if (recomputeJobNextRunAtMs({ state, job, nowMs: now })) {
+        if (
+          recomputeJobNextRunAtMs({
+            state,
+            job,
+            nowMs: now,
+            suppressScheduleComputeError:
+              opts?.suppressScheduleComputeErrorJobIds?.has(job.id) ?? false,
+            recordedScheduleComputeErrorJobIds: opts?.recordedScheduleComputeErrorJobIds,
+          })
+        ) {
           changed = true;
         }
       } else if (
@@ -526,7 +585,16 @@ export function recomputeNextRunsForMaintenance(
         const lastRun = job.state.lastRunAtMs;
         const alreadyExecutedSlot = isFiniteTimestamp(lastRun) && lastRun >= job.state.nextRunAtMs;
         if (alreadyExecutedSlot) {
-          if (recomputeJobNextRunAtMs({ state, job, nowMs: now })) {
+          if (
+            recomputeJobNextRunAtMs({
+              state,
+              job,
+              nowMs: now,
+              suppressScheduleComputeError:
+                opts?.suppressScheduleComputeErrorJobIds?.has(job.id) ?? false,
+              recordedScheduleComputeErrorJobIds: opts?.recordedScheduleComputeErrorJobIds,
+            })
+          ) {
             changed = true;
           }
         }

@@ -14,7 +14,8 @@ import {
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import * as schedule from "../schedule.js";
 import type { CronJob } from "../types.js";
-import { computeJobNextRunAtMs } from "./jobs.js";
+import { MIN_CRON_REFIRE_GAP_MS, computeJobNextRunAtMs } from "./jobs.js";
+import { start, stop } from "./ops.js";
 import { createCronServiceState, type CronEvent } from "./state.js";
 import {
   DEFAULT_JOB_TIMEOUT_MS,
@@ -1138,6 +1139,7 @@ describe("cron service timer regressions", () => {
       expect(job.state.runningAtMs).toBeUndefined();
       expect(job.state.lastRunAtMs).toBe(startedAt);
       expect(job.state.lastStatus).toBe("ok");
+      expect(job.state.scheduleErrorCount).toBe(1);
       expect(job.state.nextRunAtMs).toBeUndefined();
       expect(job.enabled).toBe(true);
     } finally {
@@ -1180,10 +1182,294 @@ describe("cron service timer regressions", () => {
       expect(job.state.lastRunAtMs).toBe(startedAt);
       expect(job.state.lastStatus).toBe("error");
       expect(job.state.consecutiveErrors).toBe(1);
+      expect(job.state.scheduleErrorCount).toBe(1);
       expect(job.state.nextRunAtMs).toBeUndefined();
       expect(job.enabled).toBe(true);
     } finally {
       nextRunSpy.mockRestore();
+    }
+  });
+
+  it("does not double-count schedule errors in the completion maintenance pass (#66019)", async () => {
+    const store = timerRegressionFixtures.makeStorePath();
+    const scheduledAt = Date.parse("2026-04-13T16:00:00.000Z");
+    const cronJob = createIsolatedRegressionJob({
+      id: "cron-66019-single-count",
+      name: "cron-66019-single-count",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 7 * * *", tz: "Asia/Shanghai" },
+      payload: { kind: "agentTurn", message: "ping" },
+      state: { nextRunAtMs: scheduledAt },
+    });
+    await writeCronJobs(store.storePath, [cronJob]);
+
+    let now = scheduledAt;
+    const runIsolatedAgentJob = vi.fn(async () => {
+      now = scheduledAt + 25;
+      return { status: "ok" as const, summary: "done" };
+    });
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      nowMs: () => now,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+    });
+    const nextRunSpy = vi.spyOn(schedule, "computeNextRunAtMs").mockReturnValue(undefined);
+
+    try {
+      await onTimer(state);
+
+      const job = state.store?.jobs.find((entry) => entry.id === "cron-66019-single-count");
+      expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
+      expect(job?.state.scheduleErrorCount).toBe(1);
+      expect(job?.state.nextRunAtMs).toBeUndefined();
+      expect(job?.enabled).toBe(true);
+    } finally {
+      nextRunSpy.mockRestore();
+    }
+  });
+
+  it("does not double-count thrown schedule errors in the completion maintenance pass (#66019)", async () => {
+    const store = timerRegressionFixtures.makeStorePath();
+    const scheduledAt = Date.parse("2026-04-13T16:10:00.000Z");
+    const cronJob = createIsolatedRegressionJob({
+      id: "cron-66019-throw-single-count",
+      name: "cron-66019-throw-single-count",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 7 * * *", tz: "Invalid/Timezone" },
+      payload: { kind: "agentTurn", message: "ping" },
+      state: { nextRunAtMs: scheduledAt },
+    });
+    await writeCronJobs(store.storePath, [cronJob]);
+
+    let now = scheduledAt;
+    const runIsolatedAgentJob = vi.fn(async () => {
+      now = scheduledAt + 25;
+      return { status: "ok" as const, summary: "done" };
+    });
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      nowMs: () => now,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+    });
+    const nextRunSpy = vi.spyOn(schedule, "computeNextRunAtMs").mockImplementation(() => {
+      throw new Error("invalid timezone");
+    });
+
+    try {
+      await onTimer(state);
+
+      const job = state.store?.jobs.find((entry) => entry.id === "cron-66019-throw-single-count");
+      expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
+      expect(job?.state.scheduleErrorCount).toBe(1);
+      expect(job?.state.nextRunAtMs).toBeUndefined();
+      expect(job?.enabled).toBe(true);
+    } finally {
+      nextRunSpy.mockRestore();
+    }
+  });
+
+  it("clears schedule error count when completion maintenance recompute recovers (#66019)", async () => {
+    const store = timerRegressionFixtures.makeStorePath();
+    const scheduledAt = Date.parse("2026-04-13T16:15:00.000Z");
+    const recoveredTooSoonNextRunAtMs = scheduledAt + 1_000;
+    const recoveredRefireFloorMs = scheduledAt + 25 + MIN_CRON_REFIRE_GAP_MS;
+    const cronJob = createIsolatedRegressionJob({
+      id: "cron-66019-completion-recovered",
+      name: "cron-66019-completion-recovered",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 7 * * *", tz: "Asia/Shanghai" },
+      payload: { kind: "agentTurn", message: "ping" },
+      state: { nextRunAtMs: scheduledAt },
+    });
+    await writeCronJobs(store.storePath, [cronJob]);
+
+    let now = scheduledAt;
+    const runIsolatedAgentJob = vi.fn(async () => {
+      now = scheduledAt + 25;
+      return { status: "ok" as const, summary: "done" };
+    });
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      nowMs: () => now,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+    });
+    let computeCalls = 0;
+    const nextRunSpy = vi.spyOn(schedule, "computeNextRunAtMs").mockImplementation(() => {
+      computeCalls += 1;
+      return computeCalls === 1 ? undefined : recoveredTooSoonNextRunAtMs;
+    });
+
+    try {
+      await onTimer(state);
+
+      const job = state.store?.jobs.find((entry) => entry.id === "cron-66019-completion-recovered");
+      expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
+      expect(computeCalls).toBeGreaterThanOrEqual(2);
+      expect(job?.state.scheduleErrorCount).toBeUndefined();
+      expect(job?.state.nextRunAtMs).toBe(recoveredRefireFloorMs);
+      expect(job?.enabled).toBe(true);
+    } finally {
+      nextRunSpy.mockRestore();
+    }
+  });
+
+  it("does not triple-count startup catch-up schedule errors (#66019)", async () => {
+    const store = timerRegressionFixtures.makeStorePath();
+    const scheduledAt = Date.parse("2026-04-13T16:10:00.000Z");
+    const cronJob = createIsolatedRegressionJob({
+      id: "cron-66019-startup-single-count",
+      name: "cron-66019-startup-single-count",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 7 * * *", tz: "Asia/Shanghai" },
+      payload: { kind: "agentTurn", message: "ping" },
+      state: { nextRunAtMs: scheduledAt },
+    });
+    await writeCronJobs(store.storePath, [cronJob]);
+
+    let now = scheduledAt;
+    const runIsolatedAgentJob = vi.fn(async () => {
+      now = scheduledAt + 25;
+      return { status: "ok" as const, summary: "done" };
+    });
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      nowMs: () => now,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+    });
+    const nextRunSpy = vi.spyOn(schedule, "computeNextRunAtMs").mockReturnValue(undefined);
+
+    try {
+      await start(state);
+
+      const job = state.store?.jobs.find((entry) => entry.id === "cron-66019-startup-single-count");
+      expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
+      expect(job?.state.scheduleErrorCount).toBe(1);
+      expect(job?.state.nextRunAtMs).toBeUndefined();
+      expect(job?.enabled).toBe(true);
+    } finally {
+      nextRunSpy.mockRestore();
+      stop(state);
+    }
+  });
+
+  it("clears startup catch-up schedule error count when recompute recovers (#66019)", async () => {
+    const store = timerRegressionFixtures.makeStorePath();
+    const scheduledAt = Date.parse("2026-04-13T16:15:00.000Z");
+    const recoveredTooSoonNextRunAtMs = scheduledAt + 1_000;
+    const recoveredRefireFloorMs = scheduledAt + 25 + MIN_CRON_REFIRE_GAP_MS;
+    const cronJob = createIsolatedRegressionJob({
+      id: "cron-66019-startup-recovered",
+      name: "cron-66019-startup-recovered",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 7 * * *", tz: "Asia/Shanghai" },
+      payload: { kind: "agentTurn", message: "ping" },
+      state: { nextRunAtMs: scheduledAt },
+    });
+    await writeCronJobs(store.storePath, [cronJob]);
+
+    let now = scheduledAt;
+    const runIsolatedAgentJob = vi.fn(async () => {
+      now = scheduledAt + 25;
+      return { status: "ok" as const, summary: "done" };
+    });
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      nowMs: () => now,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+    });
+    let computeCalls = 0;
+    const nextRunSpy = vi.spyOn(schedule, "computeNextRunAtMs").mockImplementation(() => {
+      computeCalls += 1;
+      return computeCalls === 1 ? undefined : recoveredTooSoonNextRunAtMs;
+    });
+
+    try {
+      await start(state);
+
+      const job = state.store?.jobs.find((entry) => entry.id === "cron-66019-startup-recovered");
+      expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
+      expect(computeCalls).toBeGreaterThanOrEqual(2);
+      expect(job?.state.scheduleErrorCount).toBeUndefined();
+      expect(job?.state.nextRunAtMs).toBe(recoveredRefireFloorMs);
+      expect(job?.enabled).toBe(true);
+    } finally {
+      nextRunSpy.mockRestore();
+      stop(state);
+    }
+  });
+
+  it("suppresses startup follow-up recomputes for maintenance schedule errors (#66019)", async () => {
+    const store = timerRegressionFixtures.makeStorePath();
+    const scheduledAt = Date.parse("2026-04-13T16:20:00.000Z");
+    const dueJob = createIsolatedRegressionJob({
+      id: "cron-66019-startup-due",
+      name: "cron-66019-startup-due",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 7 * * *", tz: "Asia/Shanghai" },
+      payload: { kind: "agentTurn", message: "ping" },
+      state: { nextRunAtMs: scheduledAt },
+    });
+    const missingNextRunJob = createIsolatedRegressionJob({
+      id: "cron-66019-startup-maintenance",
+      name: "cron-66019-startup-maintenance",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 8 * * *", tz: "Asia/Shanghai" },
+      payload: { kind: "agentTurn", message: "pong" },
+      state: {},
+    });
+    await writeCronJobs(store.storePath, [dueJob, missingNextRunJob]);
+
+    let now = scheduledAt;
+    const runIsolatedAgentJob = vi.fn(async () => {
+      now = scheduledAt + 25;
+      return { status: "ok" as const, summary: "done" };
+    });
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      nowMs: () => now,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+    });
+    const nextRunSpy = vi.spyOn(schedule, "computeNextRunAtMs").mockReturnValue(undefined);
+
+    try {
+      await start(state);
+
+      const due = state.store?.jobs.find((entry) => entry.id === "cron-66019-startup-due");
+      const maintenance = state.store?.jobs.find(
+        (entry) => entry.id === "cron-66019-startup-maintenance",
+      );
+      expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
+      expect(due?.state.scheduleErrorCount).toBe(1);
+      expect(maintenance?.state.scheduleErrorCount).toBe(1);
+      expect(maintenance?.state.nextRunAtMs).toBeUndefined();
+      expect(maintenance?.enabled).toBe(true);
+    } finally {
+      nextRunSpy.mockRestore();
+      stop(state);
     }
   });
 
