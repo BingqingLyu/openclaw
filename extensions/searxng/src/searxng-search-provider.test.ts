@@ -145,6 +145,14 @@ describe("searxng web search provider", () => {
     expect(resolveSearxngLanguage(config)).toBe("de");
   });
 
+  it("exposes a credentialNote with JSON format guidance", () => {
+    const provider = createSearxngWebSearchProvider();
+    expect(provider.credentialNote).toBeDefined();
+    expect(provider.credentialNote).toContain("json format enabled");
+    expect(provider.credentialNote).toContain("search.formats");
+    expect(provider.runSetup).toBeUndefined();
+  });
+
   it("persists base URL to plugin config via setConfiguredCredentialValue", () => {
     const provider = createSearxngWebSearchProvider();
     const config = {} as Record<string, unknown>;
