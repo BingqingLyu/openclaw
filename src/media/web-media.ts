@@ -106,9 +106,19 @@ const HOST_READ_ALLOWED_DOCUMENT_MIMES = new Set([
   "text/csv",
   "text/markdown",
 ]);
-// file-type returns undefined (no magic bytes) for plain-text formats like CSV and
-// Markdown, so host-read needs an explicit "this really decodes as text" fallback.
-const HOST_READ_TEXT_PLAIN_ALIASES = new Set(["text/csv", "text/markdown"]);
+// file-type returns undefined (no magic bytes) for text-based formats like CSV,
+// Markdown, HTML, XML, and CSS, so host-read needs an explicit "this really
+// decodes as text" fallback. Binary or ZIP payloads renamed with these
+// extensions are rejected by isValidatedHostReadText (printable-ratio +
+// no-binary-sniff check).
+const HOST_READ_TEXT_PLAIN_ALIASES = new Set([
+  "text/csv",
+  "text/markdown",
+  "text/html",
+  "text/xml",
+  "text/css",
+  "application/xml",
+]);
 const MB = 1024 * 1024;
 
 function getTextStats(text: string): { printableRatio: number } {
@@ -223,17 +233,19 @@ function assertHostReadMediaAllowed(params: {
 }): void {
   const declaredMime = normalizeMimeType(mimeTypeFromFilePath(params.filePath));
   const normalizedMime = normalizeMimeType(params.contentType);
-  // For extension-declared plain-text aliases such as .csv/.md, trust only the
+  // For extension-declared plain-text aliases such as .csv/.md/.html, trust only the
   // text validator path. Some opaque blobs can still produce bogus binary MIME
   // hits (for example BOM-prefixed 0xFF data sniffing as audio/mpeg), and
   // host-read should reject those instead of returning early on the sniff.
   if (declaredMime && HOST_READ_TEXT_PLAIN_ALIASES.has(declaredMime)) {
-    if (!params.sniffedContentType && params.buffer && isValidatedHostReadText(params.buffer)) {
+    const sniffed = normalizeMimeType(params.sniffedContentType);
+    const sniffOk = !sniffed || HOST_READ_TEXT_PLAIN_ALIASES.has(sniffed);
+    if (sniffOk && params.buffer && isValidatedHostReadText(params.buffer)) {
       return;
     }
     throw new LocalMediaAccessError(
       "path-not-allowed",
-      "hostReadCapability permits only validated plain-text CSV/Markdown documents for local reads",
+      "hostReadCapability permits only validated text documents (CSV/Markdown/HTML/XML/CSS) for local reads",
     );
   }
   const sniffedKind = kindFromMime(params.sniffedContentType);
@@ -254,10 +266,10 @@ function assertHostReadMediaAllowed(params: {
   ) {
     return;
   }
-  // CSV / Markdown exception: file-type v22 returns undefined (not "text/plain") for
-  // plain-text buffers that have no binary magic bytes. Allow these formats when:
+  // Text-document exception: file-type v22 returns undefined for these
+  // plain-text buffers because they have no binary magic bytes. Allow them when:
   // - sniffedMime is undefined (no binary signature detected by file-type)
-  // - The extension-derived MIME is text/csv or text/markdown (operator intent)
+  // - The extension-derived MIME is one of the explicit text-document aliases
   // - The buffer decodes as actual text instead of opaque binary bytes
   if (
     !sniffedMime &&

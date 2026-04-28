@@ -196,6 +196,77 @@ describe("loadWebMedia", () => {
     });
   });
 
+  it("allows host-read HTML files when MIME is inferred from the file path fallback", async () => {
+    const result = await loadDocumentWithHostRead(
+      "report.html",
+      "<!doctype html><html><body>ok</body></html>",
+    );
+    expect(result.kind).toBe("document");
+    expect(result.contentType).toBe("text/html");
+    expect(result.fileName).toBe("report.html");
+    expect(result.buffer.toString("utf8")).toContain("<!doctype html>");
+  });
+
+  it("allows host-read XML files when MIME is inferred from the file path fallback", async () => {
+    const result = await loadDocumentWithHostRead(
+      "data.xml",
+      '<?xml version="1.0"?><root><a>1</a></root>',
+    );
+    expect(result.kind).toBe("document");
+    expect(result.contentType).toBe("application/xml");
+  });
+
+  it("allows host-read CSS files when MIME is inferred from the file path fallback", async () => {
+    const result = await loadDocumentWithHostRead(
+      "styles.css",
+      "body { color: #333; }\n.title { font-size: 14px; }\n",
+    );
+    expect(result.kind).toBe("document");
+    expect(result.contentType).toBe("text/css");
+  });
+
+  it.each([
+    { label: "HTML", fileName: "fake.html" },
+    { label: "XML", fileName: "fake.xml" },
+    { label: "CSS", fileName: "fake.css" },
+  ])("rejects ZIP payloads renamed as %s", async ({ fileName }) => {
+    const fakeFile = path.join(fixtureRoot, fileName);
+    await fs.writeFile(fakeFile, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]));
+    await expect(
+      loadWebMedia(fakeFile, {
+        maxBytes: 1024 * 1024,
+        localRoots: "any",
+        readFile: async (filePath) => await fs.readFile(filePath),
+        hostReadCapability: true,
+      }),
+    ).rejects.toMatchObject({
+      code: "path-not-allowed",
+    });
+  });
+
+  it.each([
+    { label: "HTML", fileName: "binary.html" },
+    { label: "XML", fileName: "binary.xml" },
+    { label: "CSS", fileName: "binary.css" },
+  ])("rejects opaque high-byte binary disguised as %s", async ({ fileName }) => {
+    const fakeFile = path.join(fixtureRoot, fileName);
+    const opaqueBinary = Buffer.alloc(9000);
+    for (let i = 0; i < opaqueBinary.length; i += 1) {
+      opaqueBinary[i] = 0xa0 + (i % 96);
+    }
+    await fs.writeFile(fakeFile, opaqueBinary);
+    await expect(
+      loadWebMedia(fakeFile, {
+        maxBytes: 1024 * 1024,
+        localRoots: "any",
+        readFile: async (filePath) => await fs.readFile(filePath),
+        hostReadCapability: true,
+      }),
+    ).rejects.toMatchObject({
+      code: "path-not-allowed",
+    });
+  });
+
   it("allows host-read CSV files", async () => {
     const csvFile = path.join(fixtureRoot, "data.csv");
     await fs.writeFile(csvFile, "name,value\nfoo,1\nbar,2\n", "utf8");
