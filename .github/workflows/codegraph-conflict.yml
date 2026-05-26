@@ -1,0 +1,162 @@
+name: Cross-PR Conflict Detection
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to test (leave empty for full rebuild)'
+        required: false
+  schedule:
+    - cron: '0 3 * * 1'  # Weekly full rebuild (Monday 3am UTC)
+
+concurrency:
+  group: codegraph-conflict
+  cancel-in-progress: false
+
+jobs:
+  # ── Full rebuild: schedule, workflow_dispatch (no PR), or first run ─────
+  full-rebuild:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.pr_number == '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install codegraph-ai
+        run: pip install codegraph-ai
+
+      - name: Restore codegraph DB cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .codegraph/
+          key: codegraph-db-${{ github.repository }}
+
+      - name: Full rebuild
+        run: |
+          rm -rf .codegraph
+          codegraph init --repo . --lang javascript --commits 300 --db .codegraph
+          codegraph pr-review prepare --db .codegraph --skip-single-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post conflict comments (all PRs)
+        run: codegraph pr-review label --db .codegraph
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save codegraph DB cache
+        uses: actions/cache/save@v4
+        with:
+          path: .codegraph/
+          key: codegraph-db-${{ github.repository }}-${{ github.run_id }}
+
+  # ── Push to main: update base code graph ────────────────────
+  update-base-graph:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install codegraph-ai
+        run: pip install codegraph-ai
+
+      - name: Restore codegraph DB cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .codegraph/
+          key: codegraph-db-${{ github.repository }}
+
+      - name: Update base code graph
+        if: steps.cache-restore.outputs.cache-hit == 'true'
+        run: codegraph incremental --repo . --db .codegraph
+
+      - name: Save codegraph DB cache
+        if: steps.cache-restore.outputs.cache-hit == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .codegraph/
+          key: codegraph-db-${{ github.repository }}-${{ github.run_id }}
+
+  # ── PR event or workflow_dispatch with PR number ────────────
+  pr-update:
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.pr_number != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install codegraph-ai
+        run: pip install codegraph-ai
+
+      - name: Restore codegraph DB cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .codegraph/
+          key: codegraph-db-${{ github.repository }}
+
+      - name: Initialize if no DB exists
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: |
+          codegraph init --repo . --lang javascript --commits 300 --db .codegraph
+          codegraph pr-review prepare --db .codegraph --skip-single-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine PR number
+        id: pr-num
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+            echo "action=opened" >> $GITHUB_OUTPUT
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "action=${{ github.event.action }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update PR in graph
+        run: |
+          if [ "${{ steps.pr-num.outputs.action }}" = "closed" ]; then
+            codegraph pr-review update --db .codegraph --pr ${{ steps.pr-num.outputs.number }} --closed
+          else
+            codegraph pr-review update --db .codegraph --pr ${{ steps.pr-num.outputs.number }}
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post conflict comment
+        if: steps.pr-num.outputs.action != 'closed'
+        run: codegraph pr-review label --db .codegraph --pr ${{ steps.pr-num.outputs.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save codegraph DB cache
+        uses: actions/cache/save@v4
+        with:
+          path: .codegraph/
+          key: codegraph-db-${{ github.repository }}-${{ github.run_id }}
