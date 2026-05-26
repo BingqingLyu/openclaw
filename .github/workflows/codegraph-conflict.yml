@@ -36,6 +36,15 @@ jobs:
       - name: Install codegraph-ai
         run: pip install codegraph-ai
 
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-all-MiniLM-L6-v2
+
+      - name: Download embedding model
+        run: python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
       - name: Restore codegraph DB cache
         uses: actions/cache/restore@v4
         with:
@@ -77,6 +86,15 @@ jobs:
       - name: Install codegraph-ai
         run: pip install codegraph-ai
 
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-all-MiniLM-L6-v2
+
+      - name: Download embedding model
+        run: python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
       - name: Restore codegraph DB cache
         id: cache-restore
         uses: actions/cache/restore@v4
@@ -112,6 +130,15 @@ jobs:
 
       - name: Install codegraph-ai
         run: pip install codegraph-ai
+
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-all-MiniLM-L6-v2
+
+      - name: Download embedding model
+        run: python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
       - name: Restore codegraph DB cache
         id: cache-restore
