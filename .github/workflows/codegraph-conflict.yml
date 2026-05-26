@@ -17,6 +17,9 @@ concurrency:
   group: codegraph-conflict
   cancel-in-progress: false
 
+env:
+  PYTHON_VERSION: '3.11'
+
 jobs:
   # ── Full rebuild: schedule, workflow_dispatch (no PR), or first run ─────
   full-rebuild:
@@ -31,10 +34,12 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install codegraph-ai
-        run: pip install codegraph-ai
+      - name: Install and patch codegraph-ai
+        run: |
+          pip install codegraph-ai
+          python .github/scripts/patch_codegraph.py
 
       - name: Cache HuggingFace model
         uses: actions/cache@v4
@@ -81,10 +86,12 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install codegraph-ai
-        run: pip install codegraph-ai
+      - name: Install and patch codegraph-ai
+        run: |
+          pip install codegraph-ai
+          python .github/scripts/patch_codegraph.py
 
       - name: Cache HuggingFace model
         uses: actions/cache@v4
@@ -126,10 +133,12 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install codegraph-ai
-        run: pip install codegraph-ai
+      - name: Install and patch codegraph-ai
+        run: |
+          pip install codegraph-ai
+          python .github/scripts/patch_codegraph.py
 
       - name: Cache HuggingFace model
         uses: actions/cache@v4
