@@ -131,16 +131,14 @@ def patch_adapter(pkg_dir, adapter_file):
         print(f'  Already patched: {adapter_file}')
         return
 
-    # Add import
+    # Add import right after "from tree_sitter_language_pack import get_parser"
     import_line = 'from codegraph.adapters._ts_compat import parse_compat'
-    # Insert after the last "from codegraph" import or "from tree_sitter" import
-    lines = content.split('\n')
-    insert_idx = 0
-    for i, line in enumerate(lines):
-        if line.startswith('from tree_sitter') or line.startswith('from codegraph'):
-            insert_idx = i + 1
-    lines.insert(insert_idx, import_line)
-    content = '\n'.join(lines)
+    anchor = 'from tree_sitter_language_pack import get_parser'
+    if anchor in content:
+        content = content.replace(anchor, anchor + '\n' + import_line)
+    else:
+        # Fallback: insert after first blank line following imports
+        content = import_line + '\n' + content
 
     # Replace parse pattern
     content = content.replace(
