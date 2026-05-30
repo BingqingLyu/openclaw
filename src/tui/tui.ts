@@ -1371,9 +1371,10 @@ export async function runTui(opts: RunTuiOptions): Promise<TuiResult> {
       return;
     }
     lastCtrlCAt = decision.nextLastCtrlCAt;
+    const activeRunHint = activeChatRunId ? "; run still active (/abort to stop)" : "";
     if (decision.action === "clear") {
       editor.setText("");
-      setActivityStatus("cleared input; press ctrl+c again to exit");
+      setActivityStatus(`cleared input; press ctrl+c again to exit${activeRunHint}`);
       tui.requestRender();
       return;
     }
@@ -1381,7 +1382,7 @@ export async function runTui(opts: RunTuiOptions): Promise<TuiResult> {
       requestExit();
       return;
     }
-    setActivityStatus("press ctrl+c again to exit");
+    setActivityStatus(`press ctrl+c again to exit${activeRunHint}`);
     tui.requestRender();
   };
   editor.onCtrlC = () => {
