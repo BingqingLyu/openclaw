@@ -337,6 +337,23 @@ function pickAmbiguousMatch(
   return best ?? entries[0] ?? null;
 }
 
+function resolveDirectoryEntryKind(
+  entry: ChannelDirectoryEntry,
+  fallbackKind: TargetResolveKind,
+): TargetResolveKind {
+  if (entry.kind === "user") {
+    return "user";
+  }
+  if (entry.kind === "group" || entry.kind === "channel") {
+    // "channel" entries intentionally normalize to the resolver's shared
+    // non-user branch. This keeps directory-derived routing aligned with the
+    // existing target-kind contract used by detectTargetKind() and
+    // formatTargetDisplay() in this module.
+    return "group";
+  }
+  return fallbackKind;
+}
+
 export async function resolveMessagingTarget(params: {
   cfg: OpenClawConfig;
   channel: ChannelId;
@@ -400,7 +417,7 @@ export async function resolveMessagingTarget(params: {
       ok: true,
       target: {
         to: normalizeDirectoryEntryId(params.channel, entry),
-        kind,
+        kind: resolveDirectoryEntryKind(entry, kind),
         display: entry.name ?? entry.handle ?? stripTargetPrefixes(entry.id),
         source: "directory",
       },
@@ -415,7 +432,7 @@ export async function resolveMessagingTarget(params: {
           ok: true,
           target: {
             to: normalizeDirectoryEntryId(params.channel, best),
-            kind,
+            kind: resolveDirectoryEntryKind(best, kind),
             display: best.name ?? best.handle ?? stripTargetPrefixes(best.id),
             source: "directory",
           },
