@@ -1269,6 +1269,12 @@ describe("statusCommand", () => {
     expect(joined).not.toContain("Fix reachability first");
   });
 
+  it("describes mature workspaces as not actively bootstrapping", async () => {
+    const joined = await runStatusAndGetJoinedLogs();
+    expect(joined).toContain("no workspaces bootstrapping");
+    expect(joined).not.toContain("no bootstrap files");
+  });
+
   it("shows gateway auth when reachable", async () => {
     mocks.loadConfig.mockReturnValue({
       session: {},
