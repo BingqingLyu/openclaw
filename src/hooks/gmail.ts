@@ -249,6 +249,7 @@ export function buildGogWatchServeArgs(cfg: GmailHookRuntimeConfig): string[] {
     "--hook-token",
     cfg.hookToken,
   ];
+  args.push("--exclude-labels", "SPAM,TRASH,DRAFT,SENT");
   if (cfg.includeBody) {
     args.push("--include-body");
   }
