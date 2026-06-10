@@ -15,7 +15,12 @@ import type { SessionBindingRecord } from "../infra/outbound/session-binding-ser
 import { peekSystemEvents, resetSystemEventsForTest } from "../infra/system-events.js";
 import type { ParsedAgentSessionKey } from "../routing/session-key.js";
 import { withTempDir } from "../test-helpers/temp-dir.js";
-import { createManagedTaskFlow, resetTaskFlowRegistryForTests } from "./task-flow-registry.js";
+import {
+  createManagedTaskFlow,
+  getTaskFlowById,
+  requestFlowCancel,
+  resetTaskFlowRegistryForTests,
+} from "./task-flow-registry.js";
 import { configureTaskFlowRegistryRuntime } from "./task-flow-registry.store.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
 import {
@@ -702,6 +707,8 @@ describe("task-registry", () => {
         failures: 1,
         byStatus: {
           queued: 1,
+          awaiting_approval: 0,
+          waiting_external: 0,
           running: 1,
           succeeded: 0,
           failed: 0,
@@ -3092,6 +3099,196 @@ describe("task-registry", () => {
       expect(peekSystemEvents("agent:main:main")).toStrictEqual([]);
       relay.dispose();
       vi.useRealTimers();
+    });
+  });
+
+  it("projects approval-pending events as awaiting_approval task state", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+
+      const created = createTaskRecord({
+        runtime: "acp",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:codex:acp:child",
+        runId: "run-await-approval",
+        task: "Run guarded command",
+        status: "running",
+        deliveryStatus: "pending",
+      });
+
+      emitAgentEvent({
+        runId: "run-await-approval",
+        stream: "approval",
+        data: {
+          phase: "requested",
+          kind: "exec",
+          status: "pending",
+          title: "Command approval requested",
+        },
+      });
+
+      expect(getTaskById(created.taskId)).toMatchObject({
+        taskId: created.taskId,
+        status: "awaiting_approval",
+        progressSummary: "Awaiting approval before command can run.",
+      });
+    });
+  });
+
+  it("keeps managed flows active when tasks move into awaiting_approval", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests({ persist: false });
+      resetTaskFlowRegistryForTests({ persist: false });
+      configureInMemoryTaskStoresForLinkValidationTests();
+
+      const flow = createManagedTaskFlow({
+        ownerKey: "agent:main:main",
+        controllerId: "tests/task-registry",
+        goal: "Await approval safely",
+      });
+
+      const created = createTaskRecord({
+        runtime: "acp",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        parentFlowId: flow.flowId,
+        childSessionKey: "agent:codex:acp:child",
+        runId: "run-await-approval-flow",
+        task: "Guarded command inside flow",
+        status: "running",
+        deliveryStatus: "pending",
+      });
+
+      requestFlowCancel({
+        flowId: flow.flowId,
+        updatedAt: 42,
+        cancelRequestedAt: 42,
+      });
+
+      emitAgentEvent({
+        runId: "run-await-approval-flow",
+        stream: "approval",
+        data: {
+          phase: "requested",
+          kind: "exec",
+          status: "pending",
+          title: "Command approval requested",
+        },
+      });
+
+      expect(getTaskById(created.taskId)).toMatchObject({
+        status: "awaiting_approval",
+      });
+      expect(getTaskFlowById(flow.flowId)).toMatchObject({
+        flowId: flow.flowId,
+        status: "queued",
+      });
+    });
+  });
+
+  it("returns awaiting_approval tasks to running when approval resolves positively", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+
+      const created = createTaskRecord({
+        runtime: "acp",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:codex:acp:child",
+        runId: "run-approval-approved",
+        task: "Run guarded command",
+        status: "awaiting_approval",
+        deliveryStatus: "pending",
+        progressSummary: "Awaiting approval before command can run.",
+      });
+
+      emitAgentEvent({
+        runId: "run-approval-approved",
+        stream: "approval",
+        data: {
+          phase: "resolved",
+          kind: "exec",
+          status: "approved",
+          title: "Command approval resolved",
+        },
+      });
+
+      expect(getTaskById(created.taskId)).toMatchObject({
+        taskId: created.taskId,
+        status: "running",
+      });
+    });
+  });
+
+  it("projects denied approval resolution as failed task state", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+
+      const created = createTaskRecord({
+        runtime: "acp",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:codex:acp:child",
+        runId: "run-approval-denied",
+        task: "Run guarded command",
+        status: "awaiting_approval",
+        deliveryStatus: "pending",
+      });
+
+      emitAgentEvent({
+        runId: "run-approval-denied",
+        stream: "approval",
+        data: {
+          phase: "resolved",
+          kind: "exec",
+          status: "denied",
+          title: "Command approval resolved",
+          message: "Command did not run: approval timed out.",
+        },
+      });
+
+      expect(getTaskById(created.taskId)).toMatchObject({
+        taskId: created.taskId,
+        status: "failed",
+        error: "Command did not run: approval timed out.",
+      });
+    });
+  });
+
+  it("projects no-output assistant events as waiting_external task state", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+
+      const created = createTaskRecord({
+        runtime: "acp",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:codex:acp:child",
+        runId: "run-waiting-external",
+        task: "Wait for external input",
+        status: "running",
+        deliveryStatus: "pending",
+      });
+
+      emitAgentEvent({
+        runId: "run-waiting-external",
+        stream: "assistant",
+        data: {
+          text: "No output for 60s. It may be waiting for input.",
+        },
+      });
+
+      expect(getTaskById(created.taskId)).toMatchObject({
+        taskId: created.taskId,
+        status: "waiting_external",
+        progressSummary: "Waiting for external input before work can continue.",
+      });
     });
   });
 

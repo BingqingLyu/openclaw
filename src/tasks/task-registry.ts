@@ -122,7 +122,12 @@ export function isParentFlowLinkError(error: unknown): error is ParentFlowLinkEr
 }
 
 function isActiveTaskStatus(status: TaskStatus): boolean {
-  return status === "queued" || status === "running";
+  return (
+    status === "queued" ||
+    status === "awaiting_approval" ||
+    status === "waiting_external" ||
+    status === "running"
+  );
 }
 
 function isTerminalFlowStatus(status: TaskFlowRecord["status"]): boolean {
@@ -1464,8 +1469,41 @@ function ensureListener() {
           patch.endedAt = endedAt ?? now;
           patch.error = typeof evt.data?.error === "string" ? evt.data.error : current.error;
         }
+      } else if (evt.stream === "approval") {
+        const approvalPhase = typeof evt.data?.phase === "string" ? evt.data.phase : undefined;
+        const approvalStatus = typeof evt.data?.status === "string" ? evt.data.status : undefined;
+        const approvalMessage = typeof evt.data?.message === "string" ? evt.data.message : undefined;
+        if (approvalPhase === "requested" && approvalStatus === "pending") {
+          patch.status = "awaiting_approval";
+          patch.progressSummary = "Awaiting approval before command can run.";
+        } else if (approvalPhase === "resolved" && approvalStatus === "approved") {
+          patch.status = "running";
+          patch.progressSummary = current.progressSummary;
+        } else if (
+          approvalPhase === "resolved" &&
+          (approvalStatus === "denied" || approvalStatus === "failed")
+        ) {
+          patch.status = "failed";
+          patch.endedAt = now;
+          patch.error = approvalMessage ?? current.error;
+          patch.terminalSummary = approvalMessage ?? current.terminalSummary;
+        }
       } else if (evt.stream === "error") {
         patch.error = typeof evt.data?.error === "string" ? evt.data.error : current.error;
+      }
+
+      const assistantText =
+        evt.stream === "assistant" && typeof evt.data?.text === "string"
+          ? evt.data.text
+          : evt.stream === "assistant" && typeof evt.data?.delta === "string"
+            ? evt.data.delta
+            : undefined;
+      if (
+        assistantText &&
+        /no output for .*it may be waiting for (input|interactive input)/i.test(assistantText)
+      ) {
+        patch.status = "waiting_external";
+        patch.progressSummary = "Waiting for external input before work can continue.";
       }
       const stateChangeEvent =
         patch.status && patch.status !== current.status
