@@ -116,7 +116,13 @@ function coerceSchedule(schedule: UnknownRecord) {
   if (normalizedExpr) {
     next.expr = normalizedExpr;
   } else if ("expr" in next) {
-    delete next.expr;
+    if (typeof next.expr !== "string" || next.kind !== "cron") {
+      delete next.expr;
+    } else {
+      // Preserve empty-string expr for cron kind (triggers validation error),
+      // but normalize whitespace-only to empty string so minLength check catches it.
+      next.expr = "";
+    }
   }
 
   if (everyMs !== undefined && everyMs >= 1) {
