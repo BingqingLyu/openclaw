@@ -77,6 +77,8 @@ actor MacNodeRuntime {
                 return try await self.handleScreenSnapshotInvoke(req)
             case MacNodeScreenCommand.record.rawValue:
                 return try await self.handleScreenRecordInvoke(req)
+            case OpenClawSystemCommand.prepare.rawValue:
+                return try await self.handleSystemRunPrepare(req)
             case OpenClawSystemCommand.run.rawValue:
                 return try await self.handleSystemRun(req)
             case OpenClawSystemCommand.which.rawValue:
