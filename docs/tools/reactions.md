@@ -61,6 +61,11 @@ tool with the `react` action. Reaction behavior varies by channel and transport.
 
   </Accordion>
 
+  <Accordion title="Mattermost">
+    - Uses Mattermost emoji names (e.g. `thumbsup`, `heart`), not Unicode.
+    - `remove: true` removes the specified emoji reaction.
+  </Accordion>
+
   <Accordion title="Zalo Personal (zalouser)">
     - Requires non-empty `emoji`.
     - `remove: true` removes that specific emoji reaction.
